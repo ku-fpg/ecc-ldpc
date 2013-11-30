@@ -11,13 +11,17 @@ category:            Codec
 build-type:          Simple
 cabal-version:       >=1.8
 
+-- Eventually, some of the matrix-specific modules may be factored into a separate package.
 library
   exposed-modules:
-                ECC.Code.LDPC.Reference
+                ECC.Code.LDPC.Reference,
+                Data.Alist,
+                Data.BitMatrix.Sparse
 
   build-depends:
                 array           == 0.4.*,
                 base            == 4.6.*,
+                matrix          == 0.2.*,
                 mtl             == 2.1.*,
                 mwc-random      == 0.13.*,
                 statistics      == 0.10.*,
@@ -29,12 +33,12 @@ executable ecc-ldpc
   build-depends:
                 array           == 0.4.*,
                 base            == 4.6.*,
+                matrix          == 0.2.*,
                 mtl             == 2.1.*,
                 mwc-random      == 0.13.*,
                 statistics      == 0.10.*,
                 vector          == 0.10.*,
-                ecc-manifold    == 0.1.0,
-                ecc-ldpc        == 0.1.0
+                ecc-manifold    == 0.1.0
   Main-is: Main.hs
   hs-source-dirs: src, main
   Ghc-options: -O2 -threaded 

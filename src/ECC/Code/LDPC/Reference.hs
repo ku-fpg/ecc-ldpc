@@ -7,6 +7,11 @@ module ECC.Code.LDPC.Reference where
 import Data.Bit
 import ECC.Types
 import Data.Char (isDigit)
+import Data.Matrix
+import qualified Data.Vector as V
+import Data.Alist
+
+type M a = Matrix a
 
 {-
 import Data.Array.Matrix
@@ -18,25 +23,32 @@ import ECC
 code :: Code
 code = Code ["ldpc/reference/<matrix-name>/<max-rounds>"]
      $ \ xs -> case xs of
-                        ["ldpc","reference",m,n]    -> fmap (: []) $ mkLDPC
+                        ["ldpc","reference",m,n]    -> fmap (: []) $ mkLDPC "moon.7.13" 200
                         _                          -> return []
 
-mkLDPC :: IO ECC
-mkLDPC = return ECC
+mkLDPC :: String -> Int -> IO ECC
+mkLDPC codeName maxI = do
+   g :: G <- readAlist (codeName ++ ".G")
+   h :: H <- readAlist (codeName ++ ".H")
+   return $ ECC
         { name     = "ldpc/reference/"
-        , encode   = return
+        , encode   = return . encoder g
         , decode   = return . (,True) . fmap mkBit . fmap (>= 0)
-        , message_length  = 1
-        , codeword_length = 1
+        , message_length  = nrows g
+        , codeword_length =  ncols g
         }
 
+type G = M Bit
+type H = M Bit
+
+encoder :: G -> [Bit] -> [Bit]
+encoder g v = V.toList (getRow 1 (multStd (rowVector (V.fromList v)) g))
 
 {-
+
 import Data.Array.Matrix
 import Data.Bit
 
-encoder :: M Bit -> V Bit -> V Bit
-encoder g v = getRowM $ rowM v `mm` g
 
 
 
