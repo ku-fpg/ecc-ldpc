@@ -12,6 +12,7 @@ import qualified Data.Vector as V
 import Data.Alist
 
 type M a = Matrix a
+type V a = V.Vector a
 
 {-
 import Data.Array.Matrix
@@ -28,8 +29,8 @@ code = Code ["ldpc/reference/<matrix-name>/<max-rounds>"]
 
 mkLDPC :: String -> Int -> IO ECC
 mkLDPC codeName maxI = do
-   g :: G <- readAlist (codeName ++ ".G")
-   h :: H <- readAlist (codeName ++ ".H")
+   g :: G <- readAlist ("codes/" ++ codeName ++ ".G")
+   h :: H <- readAlist ("codes/" ++ codeName ++ ".H")
    return $ ECC
         { name     = "ldpc/reference/"
         , encode   = return . encoder g
@@ -45,16 +46,6 @@ encoder :: G -> [Bit] -> [Bit]
 encoder g v = V.toList (getRow 1 (multStd (rowVector (V.fromList v)) g))
 
 {-
-
-import Data.Array.Matrix
-import Data.Bit
-
-
-
-
-decoder :: Int -> M Bit -> V Double -> V Bit
-decoder = ldpc
-
 ldpc :: forall d. (Floating d, Ord d) => Int -> M Bit -> V d -> V Bit
 ldpc maxIterations a orig_lam = fmap hard $ loop 0 orig_ne orig_lam
   where
