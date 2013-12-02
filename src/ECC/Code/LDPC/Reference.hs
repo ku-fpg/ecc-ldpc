@@ -17,21 +17,27 @@ type M a = Matrix a
 type V a = V.Vector a
 
 code :: Code
-code = Code ["ldpc/reference/<matrix-name>/<max-rounds>"]
+code = Code ["ldpc/reference/<matrix-name>/<max-rounds>[/<truncation-size>]"]
      $ \ xs -> case xs of
-                        ["ldpc","reference",m,n]    -> fmap (: []) $ mkLDPC "moon.7.13" 200
-                        _                          -> return []
+                ["ldpc","reference",m,n]
+                        | all isDigit n -> fmap (: []) $ mkLDPC m (read n) 0
+                ["ldpc","reference",m,n,t]
+                        | all isDigit n
+                       && all isDigit t -> fmap (: []) $ mkLDPC m (read n) (read t)
+                _                       -> return []
 
-mkLDPC :: String -> Int -> IO ECC
-mkLDPC codeName maxI = do
+mkLDPC :: String -> Int -> Int -> IO ECC
+mkLDPC codeName maxI trunc = do
    g :: G <- readAlist ("codes/" ++ codeName ++ ".G")
+   let full_g = identity (nrows g) <|> g
    h :: H <- readAlist ("codes/" ++ codeName ++ ".H")
+   let full_h = h <|> identity (nrows h)
    return $ ECC
-        { name     = "ldpc/reference/"
-        , encode   = return . V.toList . encoder g . V.fromList
-        , decode   = return . (,True) . take (nrows g) . V.toList . ldpc 128 h . V.fromList
-        , message_length  = nrows g
-        , codeword_length =  ncols g
+        { name     = "ldpc/reference/" ++ codeName ++ "/" ++ show maxI
+        , encode   = return . V.toList . encoder full_g . V.fromList
+        , decode   = return . (,True) . take (nrows full_g) . V.toList . ldpc maxI full_h . V.fromList
+        , message_length  = nrows full_g
+        , codeword_length =  ncols full_g
         }
 
 type G = M Bit
