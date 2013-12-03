@@ -6,6 +6,7 @@ module ECC.Code.LDPC.Reference where
 
 import Data.Bit
 import ECC.Types
+import ECC.Puncture
 import Data.Char (isDigit)
 import Data.Matrix
 import qualified Data.Vector as V
@@ -20,16 +21,20 @@ code :: Code
 code = Code ["ldpc/reference/<matrix-name>/<max-rounds>[/<truncation-size>]"]
      $ \ xs -> case xs of
                 ["ldpc","reference",m,n]
-                        | all isDigit n -> fmap (: []) $ mkLDPC m (read n) 0 False
+                        | all isDigit n -> fmap (: []) $ mkLDPC m (read n) False
                 ["ldpc","debug",m,n]
-                        | all isDigit n -> fmap (: []) $ mkLDPC m (read n) 0 True
+                        | all isDigit n -> fmap (: []) $ mkLDPC m (read n) True
                 ["ldpc","reference",m,n,t]
                         | all isDigit n
-                       && all isDigit t -> fmap (: []) $ mkLDPC m (read n) (read t) False
+                       && all isDigit t -> fmap (: []) $ fmap (punctureTail (read t)) $ mkLDPC m (read n) False
                 _                       -> return []
 
-mkLDPC :: String -> Int -> Int -> Bool -> IO ECC
-mkLDPC codeName maxI trunc debugging = do
+punctureTail :: Int -> ECC -> ECC
+punctureTail n ecc = punctureECC (<= (codeword_length ecc - n)) ecc
+
+
+mkLDPC :: String -> Int -> Bool -> IO ECC
+mkLDPC codeName maxI debugging = do
    g :: G <- readAlist ("codes/" ++ codeName ++ ".G")   -- with G, we prepend the identity
    let full_g = identity (nrows g) <|> g
    h :: H <- readAlist ("codes/" ++ codeName ++ ".H")
