@@ -33,9 +33,6 @@ code = Code ["ldpc/elimTanh/<matrix-name>/<max-rounds>[/<truncation-size>]"]
                        && all isDigit t -> fmap (: []) $ fmap (punctureTail (read t)) $ mkLDPC m (read n)
                 _                       -> return []
 
-punctureTail :: Int -> ECC -> ECC
-punctureTail n ecc = punctureECC (<= (codeword_length ecc - n)) ecc
-
 
 mkLDPC :: String -> Int -> IO ECC
 mkLDPC codeName maxI = do
