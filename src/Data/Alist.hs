@@ -1,8 +1,8 @@
 {-# LANGUAGE FlexibleInstances #-}
--- This is the format defined in
--- http://www.inference.phy.cam.ac.uk/mackay/codes/alist.html
+-- | An Alist is a standard way of defining sparse bit matrixes.
 --
--- An Alist is standard way of defining sparse bit matrixes.
+-- This is the format defined in
+-- <http://www.inference.phy.cam.ac.uk/mackay/codes/alist.html>
 --
 module Data.Alist (Alist(..)) where
 

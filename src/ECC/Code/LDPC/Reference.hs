@@ -5,12 +5,15 @@ module ECC.Code.LDPC.Reference where
 -- Reference implementation of LDPC
 
 import Data.Bit
+import ECC.Code.LDPC.Utils
 import ECC.Types
 import ECC.Puncture
 import Data.Char (isDigit)
 import Data.Matrix
 import qualified Data.Vector as V
 import Data.Alist
+
+
 
 import Debug.Trace
 
@@ -21,45 +24,24 @@ code :: Code
 code = Code ["ldpc/reference/<matrix-name>/<max-rounds>[/<truncation-size>]"]
      $ \ xs -> case xs of
                 ["ldpc","reference",m,n]
-                        | all isDigit n -> fmap (: []) $ mkLDPC m (read n) False
+                        | all isDigit n -> fmap (: []) $ mkLDPC ("reference") m (read n) encoder ldpc
                 ["ldpc","debug",m,n]
-                        | all isDigit n -> fmap (: []) $ mkLDPC m (read n) True
+                        | all isDigit n -> fmap (: []) $ mkLDPC ("debug") m (read n) encoder ldpc
                 ["ldpc","reference",m,n,t]
                         | all isDigit n
-                       && all isDigit t -> fmap (: []) $ fmap (punctureTail (read t)) $ mkLDPC m (read n) False
+                       && all isDigit t -> fmap (: []) $ fmap (punctureTail (read t))
+                                                       $ mkLDPC ("reference") m (read n) encoder ldpc
                 _                       -> return []
 
-punctureTail :: Int -> ECC -> ECC
-punctureTail n ecc = punctureECC (<= (codeword_length ecc - n)) ecc
-
-
-mkLDPC :: String -> Int -> Bool -> IO ECC
-mkLDPC codeName maxI debugging = do
-   g :: G <- readAlist ("codes/" ++ codeName ++ ".G")   -- with G, we prepend the identity
-   let full_g = identity (nrows g) <|> g
-   h :: H <- readAlist ("codes/" ++ codeName ++ ".H")
-   return $ ECC
-        { name     = "ldpc/reference/" ++ codeName ++ "/" ++ show maxI
-        , encode   = return . V.toList . encoder full_g . V.fromList
-        , decode   = if debugging
-                     then \ inp -> do
-                             res <- debug_ldpc maxI h (V.fromList inp)
-                             return $ (,True) $  take (nrows full_g) $ V.toList res
-                     else return . (,True) . take (nrows full_g) . V.toList . ldpc maxI h . V.fromList
-        , message_length  = nrows full_g
-        , codeword_length =  ncols full_g
-        }
-
-type G = M Bit
-type H = M Bit
+---------------------------------------------------------------------
 
 encoder :: G -> V Bit -> V Bit
 encoder g v = getRow 1 (multStd (rowVector v) g)
 
 ---------------------------------------------------------------------
 
-ldpc :: Int -> M Bit -> V Double -> V Bit
-ldpc maxIterations a orig_lam = fmap hard $ loop 0 orig_ne orig_lam
+ldpc :: M Bit -> Int -> V Double -> IO (V Bit)
+ldpc a maxIterations orig_lam = return $ fmap hard $ loop 0 orig_ne orig_lam
   where
     orig_ne :: M Double
     orig_ne = fmap (const 0) a
@@ -177,21 +159,4 @@ debug_ldpc maxIterations a orig_lam = do
   return $ fmap hard res
 
 
--- Prelude> atanh (0.99999999999999994)
--- 18.714973875118524
--- Prelude> atanh (0.99999999999999995)
--- Infinity
 
--- So we cap atanh at -18.714973875118524.
-
-atanh' :: Double -> Double
-atanh' x | isInfinite y = signum x * 18.714973875118524
-         | otherwise    = y
- where y = atanh x
-
-
-crash = do
-        h <- readAlist ("codes/moon.7.13.H")
-        return $ ldpc 128 h v0
-
-v0 = V.fromList $ [10.31704008699972,-5.762379657732054,10.71923587403389,8.69474407787769,12.403269631011147,-4.8140434138889425,1.096112697392211,-7.578778502331838,5.607400012378008,-7.687307594577467e-2,12.161984232264581,10.392572265154772,-5.1354846290270215,6.046205353391934,10.257982632106899,15.459395584777264,-5.998393431786397,12.594442761269947,1.387024485274938,5.832772771282147]

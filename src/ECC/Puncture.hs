@@ -1,10 +1,11 @@
-module ECC.Puncture (punctureECC) where
+module ECC.Puncture (punctureECC,punctureTail) where
 
 import ECC.Types
 
 -- | 'punctureECC' accepts or rejects bits from a code, shortening the size
 -- of the codeword. During decode, the punctured bits are set to unknown (0 :: Double)
 -- Because this is refering to elements from a 2D generator matrix, we start at index 1 (not 0).
+-- TODO: change the index to 0 (aka orange book)
 -- The predicate returns 'True' when we **keep** that specific bit.
 
 punctureECC :: (Int -> Bool) -> ECC -> ECC
@@ -24,3 +25,6 @@ unpuncture :: [Bool] -> [Double] -> [Double]
 unpuncture []         _      = []
 unpuncture (False:ns) xs     = 0 : unpuncture ns xs
 unpuncture (n    :ns) (x:xs) = x : unpuncture ns xs
+
+punctureTail :: Int -> ECC -> ECC
+punctureTail n ecc = punctureECC (<= (codeword_length ecc - n)) ecc
