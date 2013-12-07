@@ -18,15 +18,7 @@ type M a = Matrix a
 type V a = V.Vector a
 
 code :: Code
-code = punctureTailOfCode $ Code ["ldpc/reference/<matrix-name>/<max-rounds>[/.<truncation-size>]"]
-     $ \ xs -> case xs of
-                ["ldpc","reference",m,n]
-                        | all isDigit n -> fmap (: []) $ mkLDPC ("reference") m (read n) encoder decoder
-                ["ldpc","reference",m,n,t]
-                        | all isDigit n
-                       && all isDigit t -> fmap (: []) $ fmap (punctureTail (read t))
-                                                       $ mkLDPC ("reference") m (read n) encoder decoder
-                _                       -> return []
+code = mkLDPC_Code "reference" encoder decoder
 
 ---------------------------------------------------------------------
 

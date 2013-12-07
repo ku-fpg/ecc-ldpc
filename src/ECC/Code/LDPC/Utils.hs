@@ -4,7 +4,9 @@ module ECC.Code.LDPC.Utils where
 
 import Data.Bit
 import ECC.Types
+import ECC.Puncture
 import Data.BitMatrix.Loader
+import Data.Char (isDigit)
 
 mkLDPC :: (MatrixLoader g, MatrixLoader h)
        => String -> String -> Int
@@ -25,6 +27,18 @@ mkLDPC prefix codeName maxI encoder decoder = do
         , message_length  = getNRows g
         , codeword_length =  getNRows g + getNCols g
         }
+
+mkLDPC_Code :: (MatrixLoader g, MatrixLoader h)
+            => String
+            -> (g -> [Bit] -> IO [Bit])
+            -> (h -> Int -> [Double] -> IO [Bit])
+            -> Code
+mkLDPC_Code name encoder decoder = punctureTailOfCode $ Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/.<truncation-size>]"]
+     $ \ xs -> case xs of
+                ["ldpc",nm,m,n] | nm == name && all isDigit n
+                   -> fmap (: []) $ mkLDPC name m (read n) encoder decoder
+                _  -> return []
+
 
 -- Our version of atanh
 atanh' :: Double -> Double
