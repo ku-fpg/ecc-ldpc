@@ -13,8 +13,8 @@ newtype Matlab = Matlab { unMatlab :: Matrix Bit }
 
 instance Show Matlab where
     show (Matlab mx) = unlines
-        [ unwords [ show (mx ! (m,n)) | m <- [1..ncols mx] ]
-        | n <- [1.. nrows mx]
+        [ unwords [ show (mx ! (m,n)) | n <- [1..ncols mx] ]
+        | m <- [1.. nrows mx]
         ]
 
 instance Read Matlab where
