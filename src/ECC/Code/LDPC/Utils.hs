@@ -16,7 +16,7 @@ type H = Matrix Bit
 
 mkLDPC :: (MatrixLoader g, MatrixLoader h)
        => String -> String -> Int
-       -> (G -> [Bit] -> IO [Bit])
+       -> (g -> [Bit] -> IO [Bit])
        -> (h -> Int -> [Double] -> IO [Bit])
        -> IO ECC
 mkLDPC prefix codeName maxI encoder decoder = do
