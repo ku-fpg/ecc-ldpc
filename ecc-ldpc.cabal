@@ -17,31 +17,37 @@ library
                 ECC.Code.LDPC.Reference,
                 ECC.Code.LDPC.Utils,
                 ECC.Puncture,
+                Data.BitVector.Sparse,
                 ECC.Code.LDPC.ElimTanh,
                 Data.Alist,
-                Data.BitMatrix.Sparse
+                Data.BitMatrix.Sparse,
+                Data.BitMatrix.Loader
 
   build-depends:
                 array           == 0.4.*,
                 base            == 4.6.*,
+                directory       == 1.2.*,
                 matrix          == 0.2.*,
                 mtl             == 2.1.*,
                 mwc-random      == 0.13.*,
                 statistics      == 0.10.*,
                 vector          == 0.10.*,
-                ecc-manifold    == 0.1.0
+                ecc-manifold    == 0.1.0,
+                zlib            >= 0.5.4 && < 0.6
   hs-source-dirs:      src
 
 executable ecc-ldpc
   build-depends:
                 array           == 0.4.*,
                 base            == 4.6.*,
+                directory       == 1.2.*,
                 matrix          == 0.2.*,
                 mtl             == 2.1.*,
                 mwc-random      == 0.13.*,
                 statistics      == 0.10.*,
                 vector          == 0.10.*,
-                ecc-manifold    == 0.1.0
+                ecc-manifold    == 0.1.0,
+                zlib            >= 0.5.4 && < 0.6
   Main-is: Main.hs
   hs-source-dirs: src, main
   Ghc-options: -O2 -threaded

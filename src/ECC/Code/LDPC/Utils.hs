@@ -8,23 +8,28 @@ import Data.Matrix
 import qualified Data.Vector as V
 import Data.Vector(Vector)
 import Data.Alist
+import Data.BitMatrix.Loader
+
 
 type G = Matrix Bit
 type H = Matrix Bit
 
-mkLDPC :: String -> String -> Int -> (G -> Vector Bit -> Vector Bit) -> (H -> Int -> Vector Double -> IO (Vector Bit)) -> IO ECC
+mkLDPC :: (MatrixLoader g, MatrixLoader h)
+       => String -> String -> Int
+       -> (g -> [Bit] -> IO [Bit])
+       -> (h -> Int -> [Double] -> IO [Bit])
+       -> IO ECC
 mkLDPC prefix codeName maxI encoder decoder = do
-   g :: G <- readAlist ("codes/" ++ codeName ++ ".G")   -- with G, we prepend the identity
-   let full_g = identity (nrows g) <|> g
-   h :: H <- readAlist ("codes/" ++ codeName ++ ".H")
+   g <- loadMatrix (codeName ++ "/G")   -- with G, we prepend the identity
+   h <- loadMatrix (codeName ++ "/H")
    return $ ECC
         { name     = "ldpc/" ++ prefix ++ "/" ++ codeName ++ "/" ++ show maxI
-        , encode   = return . V.toList . encoder full_g . V.fromList
+        , encode   = encoder g
         , decode   = \ inp -> do
-                             res <- decoder h maxI (V.fromList inp)
-                             return $ (,True) $  take (nrows full_g) $ V.toList res
-        , message_length  = nrows full_g
-        , codeword_length =  ncols full_g
+                             res <- decoder h maxI inp
+                             return $ (,True) $ take (getNRows g) $ res
+        , message_length  = getNRows g
+        , codeword_length =  getNRows g + getNCols g
         }
 
 -- Our version of atanh

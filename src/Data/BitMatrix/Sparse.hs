@@ -106,6 +106,7 @@ crs (BitMatrixCCS n m arr) = BitMatrixCRS n m
                              , v <- BV.elems vs
                              ]
 
+{-
 instance Compress a => Alist (BitMatrix a) where
 --  readAlist :: String -> IO (BitMatrix 'CRS)
   readAlist fileName = do txt <- readFile fileName
@@ -145,3 +146,4 @@ item = do (x:xs) <- get
           put xs
           return x
 
+-}

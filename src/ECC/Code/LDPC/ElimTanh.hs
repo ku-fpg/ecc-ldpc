@@ -25,6 +25,9 @@ type V a = V.Vector a
 
 code :: Code
 code = Code ["ldpc/elimTanh/<matrix-name>/<max-rounds>[/<truncation-size>]"]
+     $ \ xs -> return []
+{-
+Code ["ldpc/elimTanh/<matrix-name>/<max-rounds>[/<truncation-size>]"]
      $ \ xs -> case xs of
                 ["ldpc","elimTanh",m,n]
                         | all isDigit n -> fmap (: []) $ mkLDPC m (read n)
@@ -91,3 +94,4 @@ ldpc maxIterations a orig_lam = fmap hard $ loop 0 orig_ne orig_lam
         lam' = V.fromList [ V.foldr (+) (orig_lam V.! (j - 1)) (getCol j ne')
                           | j <- [1 .. V.length lam]
                           ]
+-}
