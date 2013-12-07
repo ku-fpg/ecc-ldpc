@@ -4,15 +4,7 @@ module ECC.Code.LDPC.Utils where
 
 import Data.Bit
 import ECC.Types
-import Data.Matrix
-import qualified Data.Vector as V
-import Data.Vector(Vector)
-import Data.Alist
 import Data.BitMatrix.Loader
-
-
-type G = Matrix Bit
-type H = Matrix Bit
 
 mkLDPC :: (MatrixLoader g, MatrixLoader h)
        => String -> String -> Int

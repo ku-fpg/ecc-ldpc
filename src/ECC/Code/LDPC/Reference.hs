@@ -35,7 +35,7 @@ code = Code ["ldpc/reference/<matrix-name>/<max-rounds>[/<truncation-size>]"]
 
 ---------------------------------------------------------------------
 
-encoder :: G -> [Bit] -> IO [Bit]
+encoder :: M Bit -> [Bit] -> IO [Bit]
 encoder g v = return $ V.toList (getRow 1 (multStd (rowVector $ V.fromList v) (identity (nrows g) <|> g)))
 
 ---------------------------------------------------------------------
