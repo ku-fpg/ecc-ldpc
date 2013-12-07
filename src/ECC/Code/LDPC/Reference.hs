@@ -12,16 +12,13 @@ import Data.Char (isDigit)
 import Data.Matrix
 import qualified Data.Vector as V
 import Data.Alist
-
-
-
 import Debug.Trace
 
 type M a = Matrix a
 type V a = V.Vector a
 
 code :: Code
-code = Code ["ldpc/reference/<matrix-name>/<max-rounds>[/<truncation-size>]"]
+code = punctureTailOfCode $ Code ["ldpc/reference/<matrix-name>/<max-rounds>[/.<truncation-size>]"]
      $ \ xs -> case xs of
                 ["ldpc","reference",m,n]
                         | all isDigit n -> fmap (: []) $ mkLDPC ("reference") m (read n) encoder decoder
