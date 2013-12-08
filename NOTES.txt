@@ -1,0 +1,13 @@
+-- With the poor LDPC decoder (basically bpsk), we get
+./dist/build/ecc-ldpc/ecc-ldpc ldpc/model/jpl.1K/200 0 -m256
+   39.70 ldpc/model/jpl.1K/200  0.00      256    29891  1.14e-1 +1% -1% [95%].
+
+
+-- With the poor LDPC decoder (basically bpsk), and removing the identity mult, we get
+./dist/build/ecc-ldpc/ecc-ldpc ldpc/model/jpl.1K/200 0 -m256
+   13.25 ldpc/model/jpl.1K/200  0.00      256    29751  1.13e-1 +1% -1% [95%].
+
+
+-- With dummy encoder
+./dist/build/ecc-ldpc/ecc-ldpc ldpc/model/jpl.1K/200 0 -m256
+    1.20 ldpc/model/jpl.1K/200  0.00      256    29705  1.13e-1 +1% -1% [95%].

@@ -26,8 +26,8 @@ code :: Code
 code = mconcat
    [ mkLDPC_Code ("model-" ++ show n ++ "-" ++ show m) e d
    | (n,e) <- zip [1..] [encoder1,encoder2,encoder3,encoder4]
-   , (m,d) <- zip [1..] [ \ (_ :: Matrix Bit) _ vs -> (sumBits (map hard vs) == 0) `seq` return (map hard vs)
-                        , Ref.decoder
+   , (m,d) <- zip [1..] [ Ref.decoder
+                        , \ (_ :: Matrix Bit) _ vs -> (sumBits (map hard vs) == 0) `seq` return (map hard vs)
                         ]
    ]
 
