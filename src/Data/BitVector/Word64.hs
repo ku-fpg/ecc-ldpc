@@ -1,6 +1,6 @@
 module Data.BitVector.Word64 where
 
-import Data.Bits
+import Data.Bits as B
 import Data.Bit
 import Data.List
 import Data.Word
@@ -8,7 +8,7 @@ import Data.Word
 import qualified Data.Vector.Unboxed as U
 
 -- Perhaps this should be a vector?
-newtype BitVector = BitVector (U.Vector Word64)
+newtype BitVector = BitVector { unBitVector :: U.Vector Word64 }
         deriving Show
 
 fromList :: [Bit] -> BitVector
@@ -32,4 +32,7 @@ parseBits bs = (r,drop sz bs)
 -- zipWith combines two bit vectors with a binary bit function
 zipWithWord64 :: (Word64 -> Word64 -> Word64) -> BitVector -> BitVector -> BitVector
 zipWithWord64 f (BitVector bv1) (BitVector bv2) = BitVector (U.zipWith f bv1 bv2)
+
+popCount :: BitVector -> Int
+popCount = sum . map B.popCount . U.toList . unBitVector
 

@@ -22,6 +22,10 @@ toLists = fmap BV.toList . V.toList . unBitMatrix
 vecMatMul :: BitVector -> BitMatrix -> BitVector
 vecMatMul bv bm = foldr1 (zipWithWord64 xor) [ row | (1,row) <- zip (BV.toList bv) (V.toList (unBitMatrix bm)) ]
 
+parityMatVecMul :: BitMatrix -> BitVector -> [Int]
+parityMatVecMul bm bv = [ BV.popCount $ zipWithWord64 xor bv row | row <- V.toList (unBitMatrix bm) ]
+
+
 m = fromLists [[1,0,0,1,0,1]
               ,[0,1,0,1,1,1]
               ,[0,0,1,1,1,0]]

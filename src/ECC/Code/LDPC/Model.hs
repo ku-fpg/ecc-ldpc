@@ -29,6 +29,7 @@ code = mconcat
    | (n,e) <- zip [0..] [ Ref.encoder, encoder1,encoder2,encoder3,encoder4,encoder1 `sameAs` encoder4]
    , (m,d) <- zip [0..] [ Ref.decoder
                         , decoder1
+                        , decoder2
                         , \ (_ :: Matrix Bit) _ vs -> (sumBits (map hard vs) == 0) `seq` return (map hard vs)
                         ]
    ]
@@ -105,6 +106,30 @@ decoder1 = decoder $ Decoder
                            | j <- [1 .. V.length orig_lam]
                            ]
         }
+
+decoder2 = decoder $ Decoder
+        { pre_a        = \ h -> (h,BM64.fromLists [[ h ! (m,n) | n <- [1..ncols h]] | m <- [1..nrows h]])
+        , pre_lambda   = V.fromList
+        , check_parity = \ (_,m) lam -> all (== 0) $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (V.toList lam)))
+        , post_lambda  = map hard . V.toList
+        , pre_ne       = \ (m_opt,_) -> fmap (const 0) m_opt
+        , comp_ne      = \ (m_opt,_) lam ne -> matrix (nrows m_opt) (ncols m_opt) $ \ (m,n) ->
+                if m_opt ! (m,n) == 1
+                then
+                    -2 * atanh' (product
+                        [ tanh (- ((lam V.! (j-1) - ne ! (m,j)) / 2))
+                        | j <- [1 .. ncols m_opt]
+                        , j /= n
+                        , m_opt ! (m,j) == 1
+                        ])
+                else 0
+        , comp_lam     = \ (m_opt,_) orig_lam ne' ->
+                V.fromList [ V.foldr (+) (orig_lam V.! (j - 1)) (getCol j ne')
+                           | j <- [1 .. V.length orig_lam]
+                           ]
+        }
+
+
 
 -- V.toList (getRow 1 (multStd (rowVector $ V.fromList v) (identity (nrows g) <|> g)))
 
