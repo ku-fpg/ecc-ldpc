@@ -25,6 +25,7 @@ library
   build-depends:
                 array           == 0.4.*,
                 base            == 4.6.*,
+                containers      == 0.5.*,
                 directory       == 1.2.*,
                 matrix          == 0.2.*,
                 mtl             == 2.1.*,
@@ -39,6 +40,7 @@ executable ecc-ldpc
   build-depends:
                 array           == 0.4.*,
                 base            == 4.6.*,
+                containers      == 0.5.*,
                 directory       == 1.2.*,
                 matrix          == 0.2.*,
                 mtl             == 2.1.*,

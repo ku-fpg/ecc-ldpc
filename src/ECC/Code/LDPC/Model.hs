@@ -17,6 +17,7 @@ import Debug.Trace
 import Data.Monoid
 import qualified Data.BitMatrix.Word64 as BM64
 import qualified Data.BitVector.Word64 as BV64
+import qualified Data.Map as Map
 
 import qualified ECC.Code.LDPC.Reference as Ref
 
@@ -112,24 +113,20 @@ decoder2 = decoder $ Decoder
         , pre_lambda   = V.fromList
         , check_parity = \ (_,m) lam -> all (== 0) $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (V.toList lam)))
         , post_lambda  = map hard . V.toList
-        , pre_ne       = \ (m_opt,_) -> fmap (const 0) m_opt
-        , comp_ne      = \ (m_opt,_) lam ne -> matrix (nrows m_opt) (ncols m_opt) $ \ (m,n) ->
-                if m_opt ! (m,n) == 1
-                then
+        , pre_ne       = \ (m_opt,_) -> Map.fromList
+                                         [ ((m,n),0) | n <- [1..ncols m_opt], m <- [1..nrows m_opt], m_opt ! (m,n) == 1 ]
+        , comp_ne      = \ (m_opt,_) lam ne -> Map.mapWithKey (\ (m,n) _ ->
                     -2 * atanh' (product
-                        [ tanh (- ((lam V.! (j-1) - ne ! (m,j)) / 2))
+                        [ tanh (- ((lam V.! (j-1) - ne Map.! (m,j)) / 2))
                         | j <- [1 .. ncols m_opt]
                         , j /= n
                         , m_opt ! (m,j) == 1
-                        ])
-                else 0
+                        ])) ne
         , comp_lam     = \ (m_opt,_) orig_lam ne' ->
-                V.fromList [ V.foldr (+) (orig_lam V.! (j - 1)) (getCol j ne')
-                           | j <- [1 .. V.length orig_lam]
-                           ]
+                V.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- Map.assocs ne' ]
         }
 
-
+getCol' j ne = map snd $ Map.toList $ Map.filterWithKey (\ (m,n) _ -> n == j) ne
 
 -- V.toList (getRow 1 (multStd (rowVector $ V.fromList v) (identity (nrows g) <|> g)))
 
@@ -153,9 +150,10 @@ decoder dec a = \ !maxIterations inp -> do
                      lam' = comp_lam dec a_opt orig_lam ne'
                  in loop (n+1) ne' lam'
 
-      return $ post_lambda dec $ loop 0 (pre_ne dec a_opt) orig_lam
+      return $ post_lambda dec $ loop 0 orig_ne orig_lam
    where
-      a_opt = pre_a dec a
+      a_opt   = pre_a dec a
+      orig_ne = pre_ne dec a_opt
 
 {-
         | otherwise                    = loop maxIterations (n+1) ne' lam'
