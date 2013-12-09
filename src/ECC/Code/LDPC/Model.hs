@@ -109,20 +109,25 @@ decoder1 = decoder $ Decoder
         }
 
 decoder2 = decoder $ Decoder
-        { pre_a        = \ h -> (h,BM64.fromLists [[ h ! (m,n) | n <- [1..ncols h]] | m <- [1..nrows h]])
+        { pre_a        = \ h -> ( h
+                                , BM64.fromLists [[ h ! (m,n) | n <- [1..ncols h]] | m <- [1..nrows h]]
+                                , V.fromList [ [ n | n <- [1..ncols h], h ! (m,n) == 1 ]
+                                             | m <- [1..nrows h]
+                                             ]
+                                )
         , pre_lambda   = V.fromList
-        , check_parity = \ (_,m) lam -> all (== 0) $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (V.toList lam)))
+        , check_parity = \ (_,m,_) lam -> all (== 0) $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (V.toList lam)))
         , post_lambda  = map hard . V.toList
-        , pre_ne       = \ (m_opt,_) -> Map.fromList
+        , pre_ne       = \ (m_opt,_,_) -> Map.fromList
                                          [ ((m,n),0) | n <- [1..ncols m_opt], m <- [1..nrows m_opt], m_opt ! (m,n) == 1 ]
-        , comp_ne      = \ (m_opt,_) lam ne -> Map.mapWithKey (\ (m,n) _ ->
+        , comp_ne      = \ (m_opt,_,neighbors) lam ne -> Map.mapWithKey (\ (m,n) _ ->
                     -2 * atanh' (product
                         [ tanh (- ((lam V.! (j-1) - ne Map.! (m,j)) / 2))
-                        | j <- [1 .. ncols m_opt]
+                        | j <- neighbors V.! (m-1)
                         , j /= n
-                        , m_opt ! (m,j) == 1
+--                        , m_opt ! (m,j) == 1
                         ])) ne
-        , comp_lam     = \ (m_opt,_) orig_lam ne' ->
+        , comp_lam     = \ (m_opt,_,_) orig_lam ne' ->
                 V.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- Map.assocs ne' ]
         }
 
