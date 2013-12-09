@@ -116,7 +116,7 @@ decoder2 = decoder $ Decoder
                                              ]
                                 )
         , pre_lambda   = V.fromList
-        , check_parity = \ (_,m,_) lam -> all (== 0) $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (V.toList lam)))
+        , check_parity = \ (m_opt,m,_) lam -> not $ or $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (V.toList lam)))
         , post_lambda  = map hard . V.toList
         , pre_ne       = \ (m_opt,_,_) -> Map.fromList
                                          [ ((m,n),0) | n <- [1..ncols m_opt], m <- [1..nrows m_opt], m_opt ! (m,n) == 1 ]
@@ -125,7 +125,6 @@ decoder2 = decoder $ Decoder
                         [ tanh (- ((lam V.! (j-1) - ne Map.! (m,j)) / 2))
                         | j <- neighbors V.! (m-1)
                         , j /= n
---                        , m_opt ! (m,j) == 1
                         ])) ne
         , comp_lam     = \ (m_opt,_,_) orig_lam ne' ->
                 V.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- Map.assocs ne' ]
@@ -214,6 +213,7 @@ instance (Eq a, Same b) => Same (a -> b) where
     sameAs f1 f2 x = f1 x `sameAs` f2 x
 
 instance Same Int where sameAs = defaultIsSame
+instance Same Bool where sameAs = defaultIsSame
 instance Same Bit where sameAs = defaultIsSame
 
 instance Same a => Same (IO a) where
