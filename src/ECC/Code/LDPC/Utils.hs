@@ -41,7 +41,8 @@ mkLDPC_Code name encoder decoder = punctureTailOfCode $ Code ["ldpc/" ++ name ++
 
 
 -- Our version of atanh
-atanh' :: Double -> Double
+{-# INLINE atanh' #-}
+atanh' :: RealFloat a => a -> a
 atanh' x | isInfinite y = signum x * 18.714973875118524
          | otherwise    = y
  where y = atanh x
