@@ -30,6 +30,7 @@ library
                 matrix          == 0.2.*,
                 mtl             == 2.1.*,
                 mwc-random      == 0.13.*,
+                semigroups      == 0.12.*,
                 statistics      == 0.10.*,
                 vector          == 0.10.*,
                 ecc-manifold    == 0.1.0,
@@ -46,6 +47,7 @@ executable ecc-ldpc
                 mtl             == 2.1.*,
                 mwc-random      == 0.13.*,
                 statistics      == 0.10.*,
+                semigroups      == 0.12.*,
                 vector          == 0.10.*,
                 ecc-manifold    == 0.1.0,
                 zlib            >= 0.5.4 && < 0.6
