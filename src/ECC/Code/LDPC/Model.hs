@@ -241,7 +241,7 @@ decoder5 = Decoder
 
 decoder6 = decoder5 { share = share_minsum }
 
--- Adding Nick's minsum2 optimization
+-- Adding Nick's minsum2 optimization (not done yet)
 decoder7 = Decoder
         { pre_a        =  \ h ->
                                 let vs = [ (m,n) | n <- [1..ncols h], m <- [1..nrows h], h ! (m,n) == 1 ] in
