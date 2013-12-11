@@ -14,12 +14,13 @@ import Control.Monad
 import qualified Data.Vector as V
 import Data.Alist
 import Debug.Trace
-import Data.Monoid
+import Data.Semigroup
 import qualified Data.BitMatrix.Word64 as BM64
 import qualified Data.BitVector.Word64 as BV64
 import qualified Data.Map as Map
 
 import qualified ECC.Code.LDPC.Reference as Ref
+import qualified Data.List.NonEmpty as NonEmpty
 
 type M a = Matrix a
 type V a = V.Vector a
@@ -32,7 +33,9 @@ code = mconcat
                         , decoder1
                         , decoder2
                         , decoder3
---                        , decoder4
+                        , decoder4
+                        , decoder decoder5
+                        , decoder decoder6
                         , \ (_ :: Matrix Bit) _ vs -> (sumBits (map hard vs) == 0) `seq` return (map hard vs)
                         ]
    ]
@@ -83,7 +86,7 @@ data Decoder m m_opt lam ne d ts i = Decoder
         , check_parity  :: m_opt -> lam -> Bool -- ^ check if the input meets parity
         , post_lambda   :: lam -> [Bit]         -- ^ output the result bits (with the parity bits truncated)
         , pre_ne        :: m_opt -> ne                  -- ^
-        , comp_ne       :: forall ts . (Monoid ts) => Share d ts i -> m_opt -> lam -> ne -> ne     -- ^
+        , comp_ne       :: forall ts . Semigroup ts => Share d ts i -> m_opt -> lam -> ne -> ne     -- ^
         , comp_lam      :: m_opt -> lam -> ne -> lam    -- ^ take the original lam and ne, and give back the new lam
         , share         :: Share d ts i
         }
@@ -93,9 +96,8 @@ data Share d ts i = Share
         , from_tanh     :: ts -> i -> d
         }
 
-addShare :: Share d ts i -> Decoder  m m_opt lam ne d ts0 i -> Decoder  m m_opt lam ne d ts i
-addShare share decoder = decoder { share = share }
---(Decoder a b c d e f g h) = Decoder a b c d e f g share
+sconcat' :: (Semigroup a) => [a] -> a
+sconcat' = sconcat . NonEmpty.fromList
 
 -- reference, recoded
 decoder1 = decoder $ Decoder
@@ -107,7 +109,7 @@ decoder1 = decoder $ Decoder
         , comp_ne      = \ share m_opt lam ne -> matrix (nrows m_opt) (ncols m_opt) $ \ (m,n) ->
                 if m_opt ! (m,n) == 1
                 then
-                    from_tanh share (mconcat
+                    from_tanh share (sconcat'
                         [ to_tanh share j (lam V.! (j-1) - ne ! (m,j))
                         | j <- [1 .. ncols m_opt]
                         , m_opt ! (m,j) == 1
@@ -146,7 +148,7 @@ decoder2 = decoder $ Decoder
         , pre_ne       = \ (m_opt,_,_) -> Map.fromList
                                          [ ((m,n),0) | n <- [1..ncols m_opt], m <- [1..nrows m_opt], m_opt ! (m,n) == 1 ]
         , comp_ne      = \  share (m_opt,_,neighbors) lam ne -> Map.mapWithKey (\ (m,n) _ ->
-                    from_tanh share (mconcat
+                    from_tanh share (sconcat'
                         [ to_tanh share j (lam V.! (j-1) - ne Map.! (m,j))
                         | j <- neighbors V.! (m-1)
                         ]) n) ne
@@ -171,7 +173,7 @@ decoder3 = decoder $ Decoder
         , comp_ne      = \  share (m_opt,_,neighbors) lam ne ->
                 let tmp = Map.mapWithKey (\ (_,n) v -> to_tanh share n (lam V.! (n-1) - v)) ne
                 in Map.mapWithKey (\ (m,n) _ ->
-                    from_tanh share (mconcat
+                    from_tanh share (sconcat'
                         [ tmp Map.! (m,j)
                         | j <- neighbors V.! (m-1)
 --                        , j /= n
@@ -181,17 +183,105 @@ decoder3 = decoder $ Decoder
         , share = share_tanh
         }
 
+decoder4 = decoder $ Decoder
+        { pre_a        =  \ h -> ( h
+                                , BM64.fromLists [[ h ! (m,n) | n <- [1..ncols h]] | m <- [1..nrows h]]
+                                , V.fromList [ [ n | n <- [1..ncols h], h ! (m,n) == 1 ]
+                                             | m <- [1..nrows h]
+                                             ]
+                                )
+        , pre_lambda   = V.fromList
+        , check_parity =  \ (m_opt,m,_) lam -> not $ or $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (V.toList lam)))
+        , post_lambda  =  map hard . V.toList
+        , pre_ne       = \ (m_opt,_,_) ->
+                                Map.fromList [ ((m,n),0) | n <- [1..ncols m_opt], m <- [1..nrows m_opt], m_opt ! (m,n) == 1 ]
+        , comp_ne      = \  share (m_opt,_,neighbors) lam ne ->
+                let tanh_arr = V.fromList [ sconcat'
+                                                [  to_tanh share j (lam V.! (j-1) - ne Map.! (m,j))
+                                                | j <- neighbors V.! (m-1)
+                                                ]
+                                          | m <- [1..nrows m_opt]
+                                          ] in
+                Map.mapWithKey (\ (m,n) _ -> from_tanh share (tanh_arr V.! (m - 1)) n) ne
+        , comp_lam     = \ (m_opt,_,_) orig_lam ne' ->
+                V.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- Map.assocs ne' ]
+        , share = share_tanh
+        }
 
-data Min = Min Double | UnitMin
 
-instance Monoid Min where
-        mempty                  = UnitMin
-        mappend (Min a) (Min b) = Min $ min (abs a) (abs b) * signum a * signum b
-        mappend a UnitMin       = a
-        mappend UnitMin b       = b
+decoder5 = Decoder
+        { pre_a        =  \ h ->
+                                let vs = [ (m,n) | n <- [1..ncols h], m <- [1..nrows h], h ! (m,n) == 1 ] in
+                                ( h
+                                        -- The bit vector for the parity check
+                                , BM64.fromLists [[ h ! (m,n) | n <- [1..ncols h]] | m <- [1..nrows h]]
+                                        -- all the left/right neibours
+                                , V.fromList [ [ (i,j) | (i,(m',j))  <- [0..] `zip` vs, m == m' ]
+                                             | m <- [1..nrows h]
+                                             ]
+                                        --
+                                , V.fromList vs
+                                )
+        , pre_lambda   = V.fromList
+        , check_parity =  \ (m_opt,m,_,_) lam -> not $ or $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (V.toList lam)))
+        , post_lambda  =  map hard . V.toList
+        , pre_ne       = \ (m_opt,_,_,mns) -> V.map (const 0) mns
+        , comp_ne      = \  share (m_opt,_,neighbors,mns) lam ne ->
+                let tanh_arr = V.fromList [ sconcat'
+                                                [ to_tanh share j ((lam V.! (j - 1)) - (ne V.! i))
+                                                | (i,j) <- neighbors V.! (m-1)
+                                                ]
+                                          | m <- [1..nrows m_opt]
+                                          ] in
+                V.map (\ (m,n) -> from_tanh share (tanh_arr V.! (m - 1)) n) mns
+        , comp_lam     = \ (m_opt,_,_,mns) orig_lam ne' ->
+                V.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- V.toList mns `zip` V.toList ne' ]
+        , share = share_tanh
+        }
 
+decoder6 = decoder5 { share = share_minsum }
+
+-- Adding Nick's minsum2 optimization
+decoder7 = Decoder
+        { pre_a        =  \ h ->
+                                let vs = [ (m,n) | n <- [1..ncols h], m <- [1..nrows h], h ! (m,n) == 1 ] in
+                                ( h
+                                        -- The bit vector for the parity check
+                                , BM64.fromLists [[ h ! (m,n) | n <- [1..ncols h]] | m <- [1..nrows h]]
+                                        -- all the left/right neibours
+                                , V.fromList [ [ (i,j) | (i,(m',j))  <- [0..] `zip` vs, m == m' ]
+                                             | m <- [1..nrows h]
+                                             ]
+                                        --
+                                , V.fromList vs
+                                )
+        , pre_lambda   = V.fromList
+        , check_parity =  \ (m_opt,m,_,_) lam -> not $ or $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (V.toList lam)))
+        , post_lambda  =  map hard . V.toList
+        , pre_ne       = \ (m_opt,_,_,mns) -> V.map (const 0) mns
+        , comp_ne      = \  share (m_opt,_,neighbors,mns) lam ne ->
+                let tanh_arr = V.fromList [ sconcat'
+                                                [ to_tanh share j ((lam V.! (j - 1)) - (ne V.! i))
+                                                | (i,j) <- neighbors V.! (m-1)
+                                                ]
+                                          | m <- [1..nrows m_opt]
+                                          ] in
+                V.map (\ (m,n) -> from_tanh share (tanh_arr V.! (m - 1)) n) mns
+        , comp_lam     = \ (m_opt,_,_,mns) orig_lam ne' ->
+                V.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- V.toList mns `zip` V.toList ne' ]
+        , share = share_tanh
+        }
+
+
+share_minsum :: (RealFloat d, Floating d, Fractional d, Eq i) => Share d [(i,d)] i
+share_minsum = Share
+                { to_tanh = \ j v -> [ (j,-v) ]
+                , from_tanh = \ jts n -> (-0.75) * foldr1 (\ a b -> min (abs a) (abs b) * signum a * signum b)
+                                                          [ t | (j,t) <- jts, j /= n ]
+
+                }
 {-
-data Min2
+
         = UnitMin2
         | Min2_1 Double
         | Min2_2 Double Double Double
@@ -202,8 +292,6 @@ instance Monoid Min2 where
         mappend UnitMin b       = b
         mappend (Min a) (Min b) = Min $ min (abs a) (abs b) * signum a * signum b
 -}
-
-
 
 getCol' j ne = map snd $ Map.toList $ Map.filterWithKey (\ (m,n) _ -> n == j) ne
 
@@ -218,7 +306,7 @@ ldpc a maxIterations orig_lam = fmap hard $ loop 0 orig_ne orig_lam
 -}
 
 
-decoder :: (Monoid ts) => Decoder m m_opt lam ne d ts i -> m -> Int -> [Double] -> IO [Bit]
+decoder :: (Semigroup ts) => Decoder m m_opt lam ne d ts i -> m -> Int -> [Double] -> IO [Bit]
 decoder dec a = \ !maxIterations inp -> do
       let orig_lam = pre_lambda dec inp
 
@@ -265,7 +353,6 @@ decoder dec a = \ !maxIterations inp -> do
                           | j <- [1 .. V.length lam]
                           ]
 -}
-
 
 -- maxIterations orig_lam = return $ V.toList (ldpc a maxIterations (V.fromList orig_lam))
 
