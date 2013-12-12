@@ -12,6 +12,7 @@ import Data.Char (isDigit)
 import Data.Matrix
 import Control.Monad
 import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
 import Data.Alist
 import Debug.Trace
 import Data.Semigroup
@@ -37,6 +38,7 @@ code = mconcat
                         , decoder decoder5
                         , decoder decoder6
                         , decoder decoder7
+                        , decoder decoder8
                         , \ (_ :: Matrix Bit) _ vs -> (sumBits (map hard vs) == 0) `seq` return (map hard vs)
                         ]
    ]
@@ -242,7 +244,7 @@ decoder5 = Decoder
 
 decoder6 = decoder5 { share = share_minsum }
 
--- Adding Nick's minsum2 optimization (not done yet)
+-- Adding Nick's minsum2 optimization
 decoder7 = Decoder
         { pre_a        =  \ h ->
                                 let vs = [ (m,n) | n <- [1..ncols h], m <- [1..nrows h], h ! (m,n) == 1 ] in
@@ -301,7 +303,55 @@ decoder7 = Decoder
         , comp_lam     = \ (m_opt,_,_,mns) orig_lam ne' ->
                 V.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- V.toList mns `zip` V.toList ne' ]
         , share = share_minsum
-        } -- :: Decoder () () () () () ()
+        }
+
+-- Adding Unboxed arrays
+decoder8 = Decoder
+        { pre_a        =  \ h ->
+                                let vs = [ (m,n) | n <- [1..ncols h], m <- [1..nrows h], h ! (m,n) == 1 ] in
+                                ( h
+                                        -- The bit vector for the parity check
+                                , BM64.fromLists [[ h ! (m,n) | n <- [1..ncols h]] | m <- [1..nrows h]]
+                                        -- all the left/right neibours
+                                , V.fromList [ [ (i,j) | (i,(m',j))  <- [0..] `zip` vs, m == m' ]
+                                             | m <- [1..nrows h]
+                                             ]
+                                        --
+                                , U.fromList vs
+                                )
+        , pre_lambda   = U.fromList
+        , check_parity =  \ (m_opt,m,_,_) lam -> not $ or $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (U.toList lam)))
+        , post_lambda  =  map hard . U.toList
+        , pre_ne       = \ (m_opt,_,_,mns) -> U.map (const 0) mns
+        , comp_ne      = \  share (m_opt,_,neighbors,mns) lam ne ->
+
+                -- The new way
+                -- Flat array of values
+                let interm_arr = U.zipWith (\ (_,n) v -> - ((lam U.! (n-1)) - v)) mns ne in
+
+                let sign = U.accumulate (\ a b -> if b < 0 then not a else a)
+                                   (U.generate (nrows m_opt) (const False))
+                                   (U.zip (U.map (pred . fst) mns) interm_arr) in
+
+                let val = U.accumulate (\ (b,c) a -> if abs a <= b
+                                                     then (abs a,b)
+                                                     else (b,min (abs a) c))
+                                   (U.generate (nrows m_opt) (const (1/0,1/0)))     -- IEEE magic
+                                   (U.zip (U.map (pred . fst) mns) interm_arr) in
+                let ans2 = U.zipWith (\ (m,_) v ->
+                                        let sgn = if sign U.! (m-1) == (v < 0) then 1 else -1 in
+                                        let (a,b) = val U.! (m-1) in
+                                        if a == abs v
+                                        then (-0.75) * sgn * b
+                                        else (-0.75) * sgn * a
+                                     ) mns interm_arr in
+                ans2
+--                (traceShow comp ans1)
+        , comp_lam     = \ (m_opt,_,_,mns) orig_lam ne' ->
+                U.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- U.toList mns `zip` U.toList ne' ]
+        , share = share_minsum :: Share Double [(Int,Double)] Int -- ignored
+        }
+
 
 
 share_minsum :: (RealFloat d, Floating d, Fractional d, Eq i) => Share d [(i,d)] i

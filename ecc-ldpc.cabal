@@ -15,6 +15,7 @@ cabal-version:       >=1.8
 library
   exposed-modules:
                 ECC.Code.LDPC.Reference,
+                ECC.Code.LDPC.Model,
                 ECC.Code.LDPC.Utils,
                 Data.BitVector.Sparse,
                 ECC.Code.LDPC.ElimTanh,
@@ -55,5 +56,6 @@ executable ecc-ldpc
   hs-source-dirs: src, main
   Ghc-options: -O4 -threaded -auto-all
 
---
+-- cabal configure --enable-executable-profiling 
+
 
