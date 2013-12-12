@@ -53,7 +53,7 @@ executable ecc-ldpc
                 zlib            >= 0.5.4 && < 0.6
   Main-is: Main.hs
   hs-source-dirs: src, main
-  Ghc-options: -O2 -threaded -auto-all
+  Ghc-options: -O4 -threaded -auto-all
 
 --
 

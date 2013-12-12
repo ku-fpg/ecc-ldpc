@@ -301,7 +301,7 @@ decoder7 = Decoder
         , comp_lam     = \ (m_opt,_,_,mns) orig_lam ne' ->
                 V.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- V.toList mns `zip` V.toList ne' ]
         , share = share_minsum
-        }
+        } -- :: Decoder () () () () () ()
 
 
 share_minsum :: (RealFloat d, Floating d, Fractional d, Eq i) => Share d [(i,d)] i
