@@ -24,6 +24,8 @@ library
                 Data.BitVector.Sparse,
                 ECC.Code.LDPC.ElimTanh,
                 Data.BitMatrix.Alist,
+                Data.BitVector.Word64,
+                Data.BitMatrix.Word64,
                 Data.BitMatrix.Matlab,
                 Data.BitMatrix.Sparse,
                 Data.BitMatrix.Loader
@@ -45,6 +47,7 @@ library
                 ecc-manifold    == 0.1.0,
                 zlib            >= 0.5.4 && < 0.6
   hs-source-dirs:      src
+  Ghc-options: -O4 -threaded -auto-all
 
 executable ecc-ldpc
   build-depends:
