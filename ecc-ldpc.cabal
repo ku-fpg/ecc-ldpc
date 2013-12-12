@@ -12,8 +12,8 @@ build-type:          Simple
 cabal-version:       >=1.8
 
 data-files:
-        codes/jpl.1k/*.alist
-        codes/jpl.1k/*.m
+        codes/jpl.1K/*.alist
+        codes/jpl.1K/*.m
 
 -- Eventually, some of the matrix-specific modules may be factored into a separate package.
 library
