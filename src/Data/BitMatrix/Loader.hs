@@ -48,7 +48,9 @@ loaders = [("alist",fmap (LoaderAline . unAlist . read) . readFile)
 
 loadMatrix :: MatrixLoader m => FilePath -> IO m
 loadMatrix filePath = do
-        let prefixes = ["codes"]
+        dat <- getDataDir
+        print dat
+        let prefixes = ["codes",dat ++ "/codes"]
         filePaths <- sequence [ do ok <- doesFileExist file
                                    return (ok,loader file)
                               | (suffix,loader) <- loaders
@@ -56,7 +58,6 @@ loadMatrix filePath = do
                               , let file = prefix ++ "/" ++ filePath ++ "." ++ suffix
                               ]
         case [ loader | (True,loader) <- filePaths ] of
-                []       -> error $ "can not find any matrix files in " ++ show filePath
-                [loader] -> loader >>= return . getMatrix
-                _        -> error $ "too many matrix files in " ++ show filePath
+                []         -> error $ "can not find any matrix files in " ++ show filePath
+                (loader:_) -> loader >>= return . getMatrix
 
