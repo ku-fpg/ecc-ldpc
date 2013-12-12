@@ -312,17 +312,13 @@ decoder8 = Decoder
                                         -- The bit vector for the parity check
                                 , BM64.fromLists [[ h ! (m,n) | n <- [1..ncols h]] | m <- [1..nrows h]]
                                         -- all the left/right neibours
-                                , V.fromList [ [ (i,j) | (i,(m',j))  <- [0..] `zip` vs, m == m' ]
-                                             | m <- [1..nrows h]
-                                             ]
-                                        --
                                 , U.fromList vs
                                 )
         , pre_lambda   = U.fromList
-        , check_parity =  \ (m_opt,m,_,_) lam -> not $ or $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (U.toList lam)))
+        , check_parity =  \ (m_opt,m,_) lam -> not $ or $ BM64.parityMatVecMul m (BV64.fromList (fmap hard (U.toList lam)))
         , post_lambda  =  map hard . U.toList
-        , pre_ne       = \ (m_opt,_,_,mns) -> U.map (const 0) mns
-        , comp_ne      = \  share (m_opt,_,neighbors,mns) lam ne ->
+        , pre_ne       = \ (m_opt,_,mns) -> U.map (const 0) mns
+        , comp_ne      = \  share (m_opt,_,mns) lam ne ->
 
                 -- The new way
                 -- Flat array of values
@@ -346,7 +342,7 @@ decoder8 = Decoder
                                      ) mns interm_arr in
                 ans2
 --                (traceShow comp ans1)
-        , comp_lam     = \ (m_opt,_,_,mns) orig_lam ne' ->
+        , comp_lam     = \ (m_opt,_,mns) orig_lam ne' ->
                 U.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- U.toList mns `zip` U.toList ne' ]
         , share = share_minsum :: Share Double [(Int,Double)] Int -- ignored
         }
