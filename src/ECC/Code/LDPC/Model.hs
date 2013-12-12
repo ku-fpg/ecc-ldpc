@@ -36,6 +36,7 @@ code = mconcat
                         , decoder4
                         , decoder decoder5
                         , decoder decoder6
+                        , decoder decoder7
                         , \ (_ :: Matrix Bit) _ vs -> (sumBits (map hard vs) == 0) `seq` return (map hard vs)
                         ]
    ]
@@ -260,16 +261,46 @@ decoder7 = Decoder
         , post_lambda  =  map hard . V.toList
         , pre_ne       = \ (m_opt,_,_,mns) -> V.map (const 0) mns
         , comp_ne      = \  share (m_opt,_,neighbors,mns) lam ne ->
+                -- the old way
                 let tanh_arr = V.fromList [ sconcat'
                                                 [ to_tanh share j ((lam V.! (j - 1)) - (ne V.! i))
                                                 | (i,j) <- neighbors V.! (m-1)
                                                 ]
                                           | m <- [1..nrows m_opt]
                                           ] in
-                V.map (\ (m,n) -> from_tanh share (tanh_arr V.! (m - 1)) n) mns
+                let ans1 = V.map (\ (m,n) -> from_tanh share (tanh_arr V.! (m - 1)) n) mns in
+
+                -- The new way
+                let interm_arr = V.zipWith (\ (_,n) v -> - ((lam V.! (n-1)) - v)) mns ne in
+
+                let sign = V.accumulate (\ a b -> if b < 0 then not a else a)
+                                   (V.generate (nrows m_opt) (const False))
+                                   (V.zip (V.map (pred . fst) mns) interm_arr) in
+
+                let val = V.accumulate (\ (b,c) a -> if abs a <= b
+                                                     then (abs a,b)
+                                                     else (b,min (abs a) c))
+                                   (V.generate (nrows m_opt) (const (1/0,1/0)))     -- IEEE magic
+                                   (V.zip (V.map (pred . fst) mns) interm_arr) in
+                let ans2 = V.zipWith (\ (m,n) v ->
+                                        let sgn = if sign V.! (m-1) == (v < 0) then 1 else -1 in
+                                        let (a,b) = val V.! (m-1) in
+                                        if a == abs v
+                                        then (-0.75) * sgn * b
+                                        else (-0.75) * sgn * a
+                                     ) mns interm_arr in
+                let signOf n | n < 0 = -1
+                             | isNegativeZero n = -1
+                             | otherwise = 1 in
+                let comp = V.take 2
+                         $ V.filter (\(a1,a2,_,b) -> not b)
+                         $ (V.zipWith (\ a1 a2 -> (a1,a2, abs (a1 - a2), a1 == 0 || a1 == a2)
+                                            ) ans1 ans2) in
+                ans2
+--                (traceShow comp ans1)
         , comp_lam     = \ (m_opt,_,_,mns) orig_lam ne' ->
                 V.accum (+) orig_lam [ (n-1,v) | ((_,n),v) <- V.toList mns `zip` V.toList ne' ]
-        , share = share_tanh
+        , share = share_minsum
         }
 
 
