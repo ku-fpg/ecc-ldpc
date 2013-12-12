@@ -13,7 +13,6 @@ import Data.Matrix
 import Control.Monad
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
-import Data.Alist
 import Debug.Trace
 import Data.Semigroup
 import qualified Data.BitMatrix.Word64 as BM64

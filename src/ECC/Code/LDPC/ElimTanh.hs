@@ -18,7 +18,6 @@ import ECC.Puncture
 import Data.Char (isDigit)
 import Data.Matrix
 import qualified Data.Vector as V
-import Data.Alist
 
 type M a = Matrix a
 type V a = V.Vector a

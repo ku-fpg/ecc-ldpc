@@ -11,6 +11,10 @@ category:            Codec
 build-type:          Simple
 cabal-version:       >=1.8
 
+data-files:
+        codes/jpl.1k/*.alist
+        codes/jpl.1k/*.m
+
 -- Eventually, some of the matrix-specific modules may be factored into a separate package.
 library
   exposed-modules:
@@ -19,9 +23,13 @@ library
                 ECC.Code.LDPC.Utils,
                 Data.BitVector.Sparse,
                 ECC.Code.LDPC.ElimTanh,
-                Data.Alist,
+                Data.BitMatrix.Alist,
+                Data.BitMatrix.Matlab,
                 Data.BitMatrix.Sparse,
                 Data.BitMatrix.Loader
+  other-modules:
+                Paths_ecc_ldpc
+                
 
   build-depends:
                 array           == 0.4.*,

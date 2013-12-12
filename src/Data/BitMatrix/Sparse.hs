@@ -7,7 +7,7 @@ import Data.BitVector.Sparse (BitVector)
 import qualified Data.Vector as V
 import Data.Vector (Vector)
 import qualified Data.List as L
-import Data.Alist
+import Data.BitMatrix.Alist
 import Control.Monad.State.Lazy
 {-
 import Data.Array

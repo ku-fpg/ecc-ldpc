@@ -11,7 +11,6 @@ import ECC.Puncture
 import Data.Char (isDigit)
 import Data.Matrix
 import qualified Data.Vector as V
-import Data.Alist
 import Debug.Trace
 
 type M a = Matrix a
