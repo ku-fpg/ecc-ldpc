@@ -19,11 +19,13 @@ mkLDPC prefix codeName maxI encoder decoder = do
    print (getNRows g, getNCols g)
    h <- loadMatrix (codeName ++ "/H")
    print (getNRows h, getNCols h)
+   let encoder' = encoder g
+   let decoder' = decoder h maxI
    return $ ECC
         { name     = "ldpc/" ++ prefix ++ "/" ++ codeName ++ "/" ++ show maxI
-        , encode   = encoder g
+        , encode   = encoder'
         , decode   = \ inp -> do
-                             res <- decoder h maxI inp
+                             res <- decoder' inp
                              return $ (,True) $ take (getNRows g) $ res
         , message_length  = getNRows g
         , codeword_length =  getNRows g + getNCols g
