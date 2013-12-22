@@ -5,6 +5,7 @@ module Data.BitMatrix.Loader where
 import System.Directory
 import Data.BitMatrix.Alist
 import Data.BitMatrix.Matlab
+import Data.Matrix.QuasiCyclic
 import Data.Bit
 import Data.Matrix
 import System.IO
@@ -32,18 +33,29 @@ class MatrixLoader m where
 instance MatrixLoader (Matrix Bit) where
         getMatrix (LoaderAline m)  = m
         getMatrix (LoaderMatlab m) = m
+        getMatrix (LoaderQC m)     = toBitMatrix m
         getNRows = nrows
         getNCols = ncols
 
+instance MatrixLoader (QuasiCyclic Integer) where
+        getMatrix (LoaderAline m)  = fromBitMatrix 1 m
+        getMatrix (LoaderMatlab m) = fromBitMatrix 1 m
+        getMatrix (LoaderQC m)     = m
+        getNRows (QuasiCyclic _ a) = nrows a
+        getNCols (QuasiCyclic _ a) = ncols a
+
+
 -- The closed internally supported Datatypes, with their efficent representations.
 data LoaderMatrix where
-        LoaderAline  :: Matrix Bit -> LoaderMatrix
-        LoaderMatlab :: Matrix Bit -> LoaderMatrix
+        LoaderAline  :: Matrix Bit          -> LoaderMatrix
+        LoaderMatlab :: Matrix Bit          -> LoaderMatrix
+        LoaderQC     :: QuasiCyclic Integer -> LoaderMatrix
         deriving Show
 
 loaders :: [(String,FilePath -> IO LoaderMatrix)]
-loaders = [("alist",fmap (LoaderAline . unAlist . read) . readFile)
-          ,("m",    fmap (LoaderMatlab . unMatlab . read) . readFile)
+loaders = [("alist",    fmap (LoaderAline . unAlist . read)     . readFile)
+          ,("m",        fmap (LoaderMatlab . unMatlab . read)   . readFile)
+          ,("q",        fmap (LoaderQC . read)                  . readFile)
           ]
 
 loadMatrix :: MatrixLoader m => FilePath -> IO m
