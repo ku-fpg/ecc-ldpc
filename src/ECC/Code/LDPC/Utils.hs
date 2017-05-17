@@ -13,7 +13,7 @@ mkLDPC :: (MatrixLoader g, MatrixLoader h)
        => String -> String -> Int
        -> (g -> [Bit] -> IO [Bit])
        -> (h -> Int -> [Double] -> IO [Bit])
-       -> IO ECC
+       -> IO (ECC IO)
 mkLDPC prefix codeName maxI encoder decoder = do
    g <- loadMatrix (codeName ++ "/G")   -- with G, we prepend the identity
    print (getNRows g, getNCols g)
