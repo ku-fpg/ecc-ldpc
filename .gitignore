@@ -1,4 +1,6 @@
 dist/
 tmp/
+.stack-work/
 *~
 \#*\#
+.*.swp
