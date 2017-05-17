@@ -436,7 +436,7 @@ ldpc :: M Bit -> Int -> V Double -> V Bit
 ldpc a maxIterations orig_lam = error "" -- fmap hard $ loop 0 orig_ne orig_lam $ error ""
 
 class Same a where
-  sameAs :: Same a => a -> a -> a
+  sameAs :: a -> a -> a
 
 {-
 sameAs x y = case isSame x y of
