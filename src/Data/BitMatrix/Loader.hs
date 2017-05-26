@@ -34,19 +34,19 @@ class MatrixLoader m where
         getNRows   :: m -> Int
         getNCols   :: m -> Int
 
-instance MatrixLoader (Matrix Bool) where
-        getMatrix (LoaderAline m)  = m
-        getMatrix (LoaderMatlab m) = m
-        getMatrix (LoaderQC m)     = toBitMatrix m
-        getNRows = rows
-        getNCols = cols
+-- instance MatrixLoader (Matrix Bool) where
+--         getMatrix (LoaderAline m)  = m
+--         getMatrix (LoaderMatlab m) = m
+--         getMatrix (LoaderQC m)     = toBitMatrix m
+--         getNRows = rows
+--         getNCols = cols
 
-instance MatrixLoader (QuasiCyclic Integer) where
-        getMatrix (LoaderAline m)  = fromBitMatrix 1 m
-        getMatrix (LoaderMatlab m) = fromBitMatrix 1 m
-        getMatrix (LoaderQC m)     = m
-        getNRows (QuasiCyclic _ a) = rows a
-        getNCols (QuasiCyclic _ a) = cols a
+-- instance MatrixLoader (QuasiCyclic Integer) where
+--         getMatrix (LoaderAline m)  = fromBitMatrix 1 m
+--         getMatrix (LoaderMatlab m) = fromBitMatrix 1 m
+--         getMatrix (LoaderQC m)     = m
+--         getNRows (QuasiCyclic _ a) = rows a
+--         getNCols (QuasiCyclic _ a) = cols a
 
 
 -- The closed internally supported Datatypes, with their efficent representations.
@@ -56,7 +56,7 @@ data LoaderMatrix where
         LoaderQC     :: QuasiCyclic Integer -> LoaderMatrix
         -- deriving Show
 
-deriving instance Show LoaderMatrix
+-- deriving instance Show LoaderMatrix
 
 loaders :: [(String,FilePath -> IO LoaderMatrix)]
 loaders = [("alist",    fmap (LoaderAline . unAlist . read)     . readFile)
