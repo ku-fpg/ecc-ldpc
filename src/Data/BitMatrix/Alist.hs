@@ -7,22 +7,23 @@
 module Data.BitMatrix.Alist (Alist(..)) where
 
 import Control.Monad.State.Lazy as S
-import Data.Matrix
+import Data.Matrix.Unboxed hiding (map, sequence)
+import qualified Data.Vector.Unboxed as U
 import Data.Bit
 
-newtype Alist = Alist { unAlist :: Matrix Bit }
+newtype Alist = Alist { unAlist :: Matrix Bool }
 
 instance Show Alist where
     show (Alist mx) = unlines $ map unwords $ map (map show) $
-        [ [ nrows $ mx, ncols $ mx ]
+        [ [ rows $ mx, cols $ mx ]
         , [ maximum $ num_nlist, maximum $ num_mlist ]
         , num_nlist
         , num_mlist
         ]  ++ m_crs
            ++ m_ccs
      where
-          m_crs = [ [ m | m <- [1..ncols mx], mx!(n,m) == 1 ] | n <- [1..nrows mx] ]
-          m_ccs = [ [ n | n <- [1..nrows mx], mx!(n,m) == 1 ] | m <- [1..ncols mx] ]
+          m_crs = [ [ m | m <- [1..cols mx], mx!(n,m) ] | n <- [1..rows mx] ]
+          m_ccs = [ [ n | n <- [1..rows mx], mx!(n,m) ] | m <- [1..cols mx] ]
 
           num_nlist = map length m_crs
           num_mlist = map length m_ccs
@@ -39,8 +40,9 @@ instance Read Alist where
         num_mlist <- replicateM m item
         nlists <- sequence [ replicateM c item | c <- num_nlist ]
         _mlists <- sequence [ replicateM c item | c <- num_mlist ]
-        return $ fromList n m
-               $ [ mkBit $ i `elem` ns
+        return $ fromVector (n, m)
+               $ U.fromList
+               $ [ i `elem` ns
                  | ns <- nlists -- all the rows
                  , i <- [1..m]
                  ]

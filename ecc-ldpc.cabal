@@ -38,13 +38,15 @@ library
                 base            >= 4.6,
                 containers      >= 0.5,
                 directory       >= 1.2,
-                matrix          >= 0.2,
+                -- matrix          >= 0.2,
+                matrices,
                 mtl             >= 2.1,
                 mwc-random      >= 0.13,
                 semigroups      >= 0.12,
                 statistics      >= 0.14,
                 vector          >= 0.10,
                 ecc-manifold    == 0.1.0,
+                bitvec          >= 0.1.0.2,
                 zlib            >= 0.5.4 && < 0.7
   hs-source-dirs:      src
   Ghc-options: -O4 -threaded -auto-all

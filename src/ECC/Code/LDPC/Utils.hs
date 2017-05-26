@@ -8,11 +8,12 @@ import ECC.Puncture
 import Data.BitMatrix.Loader
 import Data.Char (isDigit)
 import Data.Semigroup
+import qualified Data.Vector.Unboxed as U
 
 mkLDPC :: (MatrixLoader g, MatrixLoader h)
        => String -> String -> Int
-       -> (g -> [Bit] -> IO [Bit])
-       -> (h -> Int -> [Double] -> IO [Bit])
+       -> (g -> U.Vector Bool -> IO (U.Vector Bool))
+       -> (h -> Int -> U.Vector Double -> IO (U.Vector Bool))
        -> IO (ECC IO)
 mkLDPC prefix codeName maxI encoder decoder = do
    g <- loadMatrix (codeName ++ "/G")   -- with G, we prepend the identity
@@ -26,15 +27,15 @@ mkLDPC prefix codeName maxI encoder decoder = do
         , encode   = encoder'
         , decode   = \ inp -> do
                              res <- decoder' inp
-                             return $ (,True) $ take (getNRows g) $ res
+                             return $ (,True) $ U.take (getNRows g) $ res
         , message_length  = getNRows g
         , codeword_length =  getNRows g + getNCols g
         }
 
 mkLDPC_Code :: (MatrixLoader g, MatrixLoader h)
             => String
-            -> (g -> [Bit] -> IO [Bit])
-            -> (h -> Int -> [Double] -> IO [Bit])
+            -> (g -> U.Vector Bool -> IO (U.Vector Bool))
+            -> (h -> Int -> U.Vector Double -> IO (U.Vector Bool))
             -> Code
 mkLDPC_Code name encoder decoder = punctureTailOfCode $ Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/.<truncation-size>]"]
      $ \ xs -> case xs of
