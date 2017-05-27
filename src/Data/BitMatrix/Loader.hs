@@ -61,7 +61,7 @@ data LoaderMatrix where
 loaders :: [(String,FilePath -> IO LoaderMatrix)]
 loaders = [("alist",    fmap (LoaderAline . unAlist . read)     . readFile)
           ,("m",        fmap (LoaderMatlab . unMatlab . read)   . readFile)
-          ,("q",        fmap (LoaderQC . read)                  . readFile)
+--          ,("q",        fmap (LoaderQC . read)                  . readFile)
           ]
 
 loadMatrix :: MatrixLoader m => FilePath -> IO m
