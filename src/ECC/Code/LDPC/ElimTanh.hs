@@ -12,7 +12,6 @@ module ECC.Code.LDPC.ElimTanh where
 --  by J. Chen, A. Dholakia, E. Eleftheriou, M. Fossorier, and X.–Y. Hu
 
 
-import Data.Bit
 import ECC.Types
 import ECC.Puncture
 import Data.Char (isDigit)

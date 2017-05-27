@@ -6,16 +6,14 @@
 
 module Data.BitMatrix.Matlab where
 
-import Data.Matrix.Unboxed (Matrix, (!), rows, cols)
-import qualified Data.Matrix.Unboxed as M
-import Data.Bit
+import Data.Matrix as M
 
 newtype Matlab = Matlab { unMatlab :: Matrix Bool }
 
 instance Show Matlab where
     show (Matlab mx) = unlines
-        [ unwords [ show (mx ! (m,n)) | n <- [1..cols mx] ]
-        | m <- [1.. rows mx]
+        [ unwords [ show (mx ! (m,n)) | n <- [1..ncols mx] ]
+        | m <- [1.. nrows mx]
         ]
 
 instance Read Matlab where

@@ -8,10 +8,7 @@ import System.Directory
 import Data.BitMatrix.Alist
 import Data.BitMatrix.Matlab
 import Data.Matrix.QuasiCyclic
-import Data.Bit
-import Data.Matrix.Unboxed hiding (sequence)
-import qualified Data.Vector.Generic as G
-import qualified Data.Vector.Unboxed as U
+import Data.Matrix
 import System.IO
 import Data.Char(chr)
 import qualified Codec.Compression.GZip as GZip
@@ -34,19 +31,19 @@ class MatrixLoader m where
         getNRows   :: m -> Int
         getNCols   :: m -> Int
 
--- instance MatrixLoader (Matrix Bool) where
---         getMatrix (LoaderAline m)  = m
---         getMatrix (LoaderMatlab m) = m
---         getMatrix (LoaderQC m)     = toBitMatrix m
---         getNRows = rows
---         getNCols = cols
+instance MatrixLoader (Matrix Bool) where
+     getMatrix (LoaderAline m)  = m
+     getMatrix (LoaderMatlab m) = m
+     getMatrix (LoaderQC m)     = toBitMatrix m
+     getNRows = nrows
+     getNCols = ncols
 
--- instance MatrixLoader (QuasiCyclic Integer) where
---         getMatrix (LoaderAline m)  = fromBitMatrix 1 m
---         getMatrix (LoaderMatlab m) = fromBitMatrix 1 m
---         getMatrix (LoaderQC m)     = m
---         getNRows (QuasiCyclic _ a) = rows a
---         getNCols (QuasiCyclic _ a) = cols a
+instance MatrixLoader (QuasiCyclic Integer) where
+     getMatrix (LoaderAline m)  = fromBitMatrix 1 m
+     getMatrix (LoaderMatlab m) = fromBitMatrix 1 m
+     getMatrix (LoaderQC m)     = m
+     getNRows (QuasiCyclic _ a) = nrows a
+     getNCols (QuasiCyclic _ a) = ncols a
 
 
 -- The closed internally supported Datatypes, with their efficent representations.
@@ -61,7 +58,7 @@ data LoaderMatrix where
 loaders :: [(String,FilePath -> IO LoaderMatrix)]
 loaders = [("alist",    fmap (LoaderAline . unAlist . read)     . readFile)
           ,("m",        fmap (LoaderMatlab . unMatlab . read)   . readFile)
---          ,("q",        fmap (LoaderQC . read)                  . readFile)
+          ,("q",        fmap (LoaderQC . read)                  . readFile)
           ]
 
 loadMatrix :: MatrixLoader m => FilePath -> IO m

@@ -2,7 +2,6 @@
 {-# LANGUAGE TupleSections #-}
 module ECC.Code.LDPC.Utils where
 
-import Data.Bit
 import ECC.Types
 import ECC.Puncture
 import Data.BitMatrix.Loader

@@ -1,6 +1,5 @@
 module Data.BitMatrix.Word64 where
 
-import Data.Bit
 import Data.Bits
 import Data.BitVector.Word64 as BV
 

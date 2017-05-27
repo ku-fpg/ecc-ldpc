@@ -3,11 +3,8 @@
 
 module Data.Matrix.QuasiCyclic where
 
-import Data.Bit
 import Data.Bits
-import Data.Matrix.Unboxed
-import qualified Data.Vector.Unboxed as U
-import qualified Data.Vector.Generic as G
+import Data.Matrix
 import Data.Char
 import qualified Data.Matrix.Matlab as Matlab
 
@@ -19,15 +16,15 @@ import Data.Word
 --
 data QuasiCyclic a = QuasiCyclic Int (Matrix a)
 
-toBitMatrix :: (G.Vector U.Vector a, Bits a) => QuasiCyclic a -> Matrix Bool
+toBitMatrix :: Bits a => QuasiCyclic a -> Matrix Bool
 toBitMatrix (QuasiCyclic sz a) = fromLists
         [ [ (a ! (m,n)) `testBit` ((j - i) `mod` sz)
-          | n <- [1..cols a], j <- [0..sz-1]
+          | n <- [1..ncols a], j <- [0..sz-1]
           ]
-        | m <- [1..rows a], i <- [0..sz-1]
+        | m <- [1..nrows a], i <- [0..sz-1]
         ]
 
-fromBitMatrix :: (G.Vector U.Vector a, Bits a) => Int -> Matrix Bool -> QuasiCyclic a
+fromBitMatrix :: Bits a => Int -> Matrix Bool -> QuasiCyclic a
 fromBitMatrix sz a | toBitMatrix q == a = q
                    | otherwise          = error "fromBitMatrix: not a cyclic matrix"
         -- We take every n'th line, generate a QuasiCyclic matrix,
@@ -37,12 +34,11 @@ fromBitMatrix sz a | toBitMatrix q == a = q
                 [ [ foldr (.|.) zero
                     [ bit j
                     | j <- [0..sz-1]
-                    , let v = a ! (m,n + j)
-                    , v  -- if set
+                    , a ! (m,n + j)  -- if set
                     ]
-                  | n <- [1,(sz+1)..cols a]
+                  | n <- [1,(sz+1)..ncols a]
                   ]
-                | m <- [1,(sz+1)..rows a]
+                | m <- [1,(sz+1)..nrows a]
                 ]
           zero = bit 0 `xor` bit 0 -- Hack to get a zero, without
 
@@ -50,11 +46,11 @@ fromBitMatrix sz a | toBitMatrix q == a = q
 cycleSize :: Bits a => QuasiCyclic a -> Int
 cycleSize (QuasiCyclic n a) = n
 
-instance (G.Vector U.Vector a, Show a) => Show (QuasiCyclic a) where
+instance Show a => Show (QuasiCyclic a) where
         -- The first line is the cycle size; the rest is a Matlab style matrix
         show (QuasiCyclic sz a) = show sz ++ "\n" ++ show (Matlab.Matlab a)
 
-instance (G.Vector U.Vector a, Read a) => Read (QuasiCyclic a) where
+instance Read a => Read (QuasiCyclic a) where
         readsPrec _ txt0 = [ (QuasiCyclic sz a,txt2)
                            | (sz,txt1)              <- reads (dropWhile isSpace txt0)
                            , (Matlab.Matlab a,txt2) <- reads (dropWhile isSpace txt1)

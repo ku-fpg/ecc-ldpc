@@ -4,7 +4,6 @@ module ECC.Code.LDPC.Model where
 
 -- Reference implementation of LDPC
 
-import Data.Bit
 import ECC.Code.LDPC.Utils
 import ECC.Types
 import ECC.Puncture
@@ -26,7 +25,9 @@ type M a = Matrix a
 type V a = V.Vector a
 
 code :: Code
-code = mconcat
+code = mempty
+{-
+mconcat
    [ mkLDPC_Code ("model-" ++ show n ++ "-" ++ show m) e d
    | (n,e) <- zip [0..] [ Ref.encoder, encoder1,encoder2,encoder3,encoder4,encoder1 `sameAs` encoder4]
    , (m,d) <- zip [0..] [ Ref.decoder
@@ -463,5 +464,5 @@ instance Same a => Same [a] where
                    | otherwise                = error ("lengths of lists are different" ++ show (length xs1,length xs2))
 
 
-
+-}
 

@@ -39,7 +39,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/ku-fpg/ecc-manifold
-    commit: b1ce661fad650ae80b0ee4ba3e11cbe313b522b2
+    commit: 0d4fd65b45d9d163ad13e44353927c5b04ca01c2
   extra-dep: true
 # The following packages have been ignored due to incompatibility with the
 # resolver compiler, dependency conflicts with other packages
@@ -48,10 +48,12 @@ packages:
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
+# AJG: it is not clear why we need bitvec.
 extra-deps:
 - statistics-0.14.0.1
 - base-orphans-0.6
 - bitvec-0.1.0.2
+
 
 # Override default flag values for local packages and extra-deps
 flags: {}

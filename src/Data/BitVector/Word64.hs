@@ -1,7 +1,6 @@
 module Data.BitVector.Word64 where
 
 import Data.Bits as B
-import Data.Bit
 import Data.List
 import Data.Word
 
@@ -20,10 +19,10 @@ toList :: BitVector -> [Bool]
 toList (BitVector ws) = concat [ [ testBit w i | i <- [0..63] ] | w <- U.toList ws ]
 
 
-parseBits :: (Num b, Bits b) => [Bool] -> (b, [Bool])
+parseBits :: (Num b, FiniteBits b) => [Bool] -> (b, [Bool])
 parseBits bs = (r,drop sz bs)
   where r = foldr (.|.) 0 [ setBit 0 i | (i,True) <- zip [0..sz-1] bs ]
-        sz = bitSize r
+        sz = finiteBitSize r
 
 (!) :: BitVector -> Int -> Bool
 (!) (BitVector vs) n = testBit (vs U.! (n `div` 64)) (n `mod` 64)

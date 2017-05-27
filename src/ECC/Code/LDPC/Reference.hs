@@ -4,7 +4,6 @@ module ECC.Code.LDPC.Reference where
 
 -- Reference implementation of LDPC
 
-import Data.Bit
 import ECC.Code.LDPC.Utils
 import ECC.Types
 import ECC.Puncture
@@ -12,7 +11,6 @@ import Data.Char (isDigit)
 import Data.Matrix
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as V
-import Data.Bit
 import Debug.Trace
 
 type M a = Matrix a
