@@ -63,6 +63,7 @@ executable ecc-ldpc
                 semigroups      >= 0.12,
                 vector          >= 0.10,
                 ecc-manifold    == 0.1.0,
+                bitvec          >= 0.1.0.2,
                 zlib            >= 0.5.4 && < 0.7
   Main-is: Main.hs
   hs-source-dirs: src, main

@@ -12,10 +12,19 @@ newtype Matlab = Matlab { unMatlab :: Matrix Bool }
 
 instance Show Matlab where
     show (Matlab mx) = unlines
-        [ unwords [ show (mx ! (m,n)) | n <- [1..ncols mx] ]
+        [ unwords [ showBit (mx ! (m,n)) | n <- [1..ncols mx] ]
         | m <- [1.. nrows mx]
         ]
 
 instance Read Matlab where
-    readsPrec _ txt = [ (Matlab $ M.fromLists $ map (map read) $ map words $ lines txt,"") ]
+    readsPrec _ txt = [ (Matlab $ M.fromLists $ map (map readBit) $ map words $ lines txt,"") ]
+
+readBit :: String -> Bool
+readBit "0" = False
+readBit "1" = True
+readBit _   = error "readBit: no parse"
+
+showBit :: Bool -> String
+showBit False = "0"
+showBit True  = "1"
 
