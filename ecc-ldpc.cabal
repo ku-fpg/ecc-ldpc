@@ -19,6 +19,7 @@ data-files:
 library
   exposed-modules:
                 ECC.Code.LDPC.Reference.Orig,
+                ECC.Code.LDPC.Reference.Sparse,
                 ECC.Code.LDPC.Model,
                 ECC.Code.LDPC.Utils,
                 Data.BitVector.Sparse,
