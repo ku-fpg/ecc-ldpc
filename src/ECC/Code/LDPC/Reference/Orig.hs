@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns, RankNTypes, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
-module ECC.Code.LDPC.Reference where
+module ECC.Code.LDPC.Reference.Orig where
 
 -- Reference implementation of LDPC
 

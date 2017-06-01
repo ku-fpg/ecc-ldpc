@@ -18,7 +18,7 @@ import qualified Data.BitMatrix.Word64 as BM64
 import qualified Data.BitVector.Word64 as BV64
 import qualified Data.Map as Map
 
-import qualified ECC.Code.LDPC.Reference as Ref
+import qualified ECC.Code.LDPC.Reference.Orig as Ref
 import qualified Data.List.NonEmpty as NonEmpty
 
 type M a = Matrix a

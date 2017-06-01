@@ -18,7 +18,7 @@ data-files:
 -- Eventually, some of the matrix-specific modules may be factored into a separate package.
 library
   exposed-modules:
-                ECC.Code.LDPC.Reference,
+                ECC.Code.LDPC.Reference.Orig,
                 ECC.Code.LDPC.Model,
                 ECC.Code.LDPC.Utils,
                 Data.BitVector.Sparse,
