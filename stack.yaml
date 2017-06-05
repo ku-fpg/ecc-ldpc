@@ -39,7 +39,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/ku-fpg/ecc-manifold
-    commit: 4318ac30b7062ca87fc2fc9d52f7c39bed349d0b
+    commit: cf47eef79c99bceb6a8a9e8a8d2b27e871fcb14c
   extra-dep: true
 # The following packages have been ignored due to incompatibility with the
 # resolver compiler, dependency conflicts with other packages
