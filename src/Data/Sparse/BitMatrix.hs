@@ -34,7 +34,7 @@ toSparseBitM mat
   where
     go m n
       | mat M.! (m, n) == False = Nothing
-      | otherwise             = Just (m, n)
+      | otherwise               = Just (m, n)
 
 sparseSet :: SparseBitM -> S.Set (Int, Int)
 sparseSet (SparseBitM _ _ s) = s

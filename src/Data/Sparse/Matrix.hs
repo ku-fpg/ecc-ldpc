@@ -22,7 +22,7 @@ type M a = M.Matrix a
 newtype SparseM a = SparseM (Map (Int, Int) a)
 
 getCol :: U.Unbox a => Int -> SparseM a -> U.Vector a
-getCol c = {-# SCC "sparseGetCol" #-}
+getCol c = {-# SCC "getCol" #-}
   U.fromList . Map.elems . Map.filterWithKey (\(_, c') _ -> c' == c) . coerce
 {-# INLINE getCol #-}
 
@@ -36,8 +36,8 @@ toSparseM mat =
       where
         v = mat ! (r, c)
 
-fromList :: [((Int, Int), a)] -> SparseM a
-fromList = coerce . Map.fromList
+fromList :: Int -> Int -> [((Int, Int), a)] -> SparseM a
+fromList _ _ = coerce . Map.fromList
 
 -- If not found, return zero
 (!!!) :: (Num a, Eq a) => SparseM a -> (Int, Int) -> a
