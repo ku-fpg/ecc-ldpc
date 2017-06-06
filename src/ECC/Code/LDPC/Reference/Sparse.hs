@@ -73,14 +73,16 @@ sparseNrows, sparseNcols :: SparseBitM -> Int
 sparseNrows (SparseBitM r _ _) = r
 sparseNcols (SparseBitM _ c _) = c
 
-(*|) :: (Num a, U.Unbox a) =>
-  SparseBitM -> V a -> V a
-(*|) mat vec = U.fromList $ map go [1..sparseNrows mat]
+(*|) :: (Eq a, Show a, Num a, U.Unbox a) =>
+  SparseBitM -> V a -> V Bool
+(*|) mat vec = U.fromList (map (fromBit . go) [1..sparseNrows mat])
   where
     go r
       = U.sum
       $ U.ifilter (\c _ -> (r, c) `Set.member` (sparseSet mat))
                   vec
+    {-# INLINE go #-}
+{-# INLINE (*|) #-}
 
 -- If not found, return zero
 (!!!) :: (Num a, Eq a) => SparseM a -> (Int, Int) -> a
@@ -141,7 +143,7 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
         c_hat = U.map (toBit . hard) lam
 
         ans :: V Bool
-        ans = U.convert $ U.map fromBit (a *| U.convert c_hat)
+        ans = a *| c_hat
 
         ne' :: SparseM Double
         ne' = Map.fromList $ map go aList
@@ -156,7 +158,7 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
               )
 
         lam' :: V Double
-        lam' = U.fromList [ U.foldr (+) (orig_lam U.! (j - 1)) (sparseGetCol j ne')
+        lam' = U.fromList [ (orig_lam U.! (j - 1)) + U.sum (sparseGetCol j ne')
                           | j <- [1 .. U.length lam]
                           ]
 
