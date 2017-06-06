@@ -37,8 +37,9 @@ data SparseBitM =
     !Int -- # cols
     (Set (Int, Int))
 
-sparseGetCol :: U.Unbox a => Int -> SparseM a -> V a
-sparseGetCol c sp = U.fromList . map snd . Map.toList $ Map.filterWithKey (\(_, c') _ -> c' == c) sp
+sparseGetCol :: U.Unbox a => Int -> SparseM a -> U.Vector a
+sparseGetCol c sp = U.fromList . Map.elems $ Map.filterWithKey (\(_, c') _ -> c' == c) sp
+{-# INLINE sparseGetCol #-}
 
 toSparseM :: (Eq a, Num a) => M a -> SparseM a
 toSparseM mat =
@@ -155,7 +156,7 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
               )
 
         lam' :: V Double
-        lam' = U.fromList [ U.foldr (+) (orig_lam U.! (j - 1)) (U.convert (sparseGetCol j ne'))
+        lam' = U.fromList [ U.foldr (+) (orig_lam U.! (j - 1)) (sparseGetCol j ne')
                           | j <- [1 .. U.length lam]
                           ]
 
