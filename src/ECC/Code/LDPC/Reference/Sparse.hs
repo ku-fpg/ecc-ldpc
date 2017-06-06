@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TupleSections #-}
 
 -- Uses a sparse bit matrix and a sparse matrix for soft values
 
@@ -22,6 +23,9 @@ import qualified Data.Set as Set
 import Data.Maybe (catMaybes)
 import Control.Applicative hiding ((<|>))
 import Data.Foldable as F
+
+import Data.List (groupBy)
+import Data.Function (on)
 
 type M a = Matrix a
 type V a = U.Vector a
@@ -103,11 +107,28 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
     a :: SparseBitM
     a = toSparseBitM a0
 
-    SparseBitM _ _ aSet = a
-    aList = Set.toList aSet
+    SparseBitM _ _ aSet0 = a
+
+    aSet :: [[(Int, Int)]]
+    aSet = groupBy ((==) `on` fst) $ Set.toAscList aSet0
+
+    aList :: [((Int, Int), [Int])]
+    aList = concatMap
+      (\list@((m,_):_) ->
+          let ones = rowOnes m
+          in
+          map (, ones) list)
+      aSet
 
     orig_ne :: SparseM Double
     orig_ne = Map.empty
+
+    rowOnes :: Int -> [Int]
+    rowOnes m =
+      [ j
+      | j <- [1 .. U.length orig_lam]
+      , isSet a (m, j)
+      ]
 
     loop :: Int -> SparseM Double -> V Double -> V Double
     loop !n ne lam
@@ -124,13 +145,12 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
         ne' :: SparseM Double
         ne' = Map.fromList $ map go aList
           where
-            go (m, n) =
-              ((m, n)
+            go (coords@(m, n), ones) =
+              (coords
               ,-2 * atanh' (product
                    [ tanh (- ((lam U.! (j-1) - ne !!! (m,j)) / 2))
-                   | j <- [1 .. U.length orig_lam]
+                   | j <- ones
                    , j /= n
-                   , isSet a (m, j)
                    ])
               )
 
