@@ -28,8 +28,10 @@ import Data.Function (on)
 
 import ECC.Code.LDPC.Reference.Orig (encoder)
 
-import Data.Sparse.Matrix as SM
-import Data.Sparse.BitMatrix
+-- import Data.Sparse.Matrix as SM
+-- import Data.Sparse.BitMatrix
+
+import Data.Sparse.ReferenceMatrix as RM
 
 type M a = Matrix a
 type V a = U.Vector a
@@ -46,7 +48,7 @@ decoder a _ maxIterations orig_lam = Just $ U.convert (ldpc a maxIterations (U.c
 ldpc :: M Bool -> Int -> V Double -> V Bool
 ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
   where
-    a :: SparseBitM
+    a :: RefMatrix Bit
     a = toSparseBitM a0
 
     aSet0 = sparseSet a
@@ -62,8 +64,8 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
           map (, ones) list)
       aSet
 
-    orig_ne :: SparseM Double
-    orig_ne = SM.fromList []
+    orig_ne :: RefMatrix Double
+    orig_ne = RM.zero (RM.nrows a) (RM.ncols a) --RM.fromList []
 
     rowOnes :: Int -> [Int]
     rowOnes m =
@@ -72,7 +74,7 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
       , isSet a (m, j)
       ]
 
-    loop :: Int -> SparseM Double -> V Double -> V Double
+    loop :: Int -> RefMatrix Double -> V Double -> V Double
     loop !n ne lam
       | U.all (== False) ans = lam
       | n >= maxIterations   = orig_lam
@@ -84,8 +86,8 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
         ans :: V Bool
         ans = a *| c_hat
 
-        ne' :: SparseM Double
-        ne' = SM.fromList $ map go aList
+        ne' :: RefMatrix Double
+        ne' = RM.fromList (RM.nrows a) (RM.ncols a) $ map go aList
           where
             go (coords@(m, n), ones) =
               (coords
@@ -97,7 +99,7 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
               )
 
         lam' :: V Double
-        lam' = U.fromList [ (orig_lam U.! (j - 1)) + ({-# SCC "U.sum" #-} U.sum (SM.getCol j ne'))
+        lam' = U.fromList [ (orig_lam U.! (j - 1)) + ({-# SCC "U.sum" #-} U.sum (RM.getCol j ne'))
                           | j <- [1 .. U.length lam]
                           ]
 
