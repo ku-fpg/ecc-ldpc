@@ -22,13 +22,13 @@ code = mkLDPC_Code "reference" encoder decoder
 
 ---------------------------------------------------------------------
 
-encoder :: M Bool -> U.Vector Bool -> IO (U.Vector Bool)
-encoder g v = return $ U.map toBool $ U.convert (getRow 1 (multStd (rowVector $ U.convert (U.map fromBool v)) (((identity (nrows g)) <|> fmap fromBool g))))
+encoder :: M Bool -> Rate -> U.Vector Bool -> U.Vector Bool
+encoder g _ v = U.map toBool $ U.convert (getRow 1 (multStd (rowVector $ U.convert (U.map fromBool v)) ((fmap fromBool g))))
 
 ---------------------------------------------------------------------
 
-decoder :: M Bool -> Int -> U.Vector Double -> IO (U.Vector Bool)
-decoder a maxIterations orig_lam = return $ U.convert (ldpc a maxIterations (U.convert orig_lam))
+decoder :: M Bool -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool)
+decoder a rate maxIterations orig_lam = Just $ U.convert (ldpc a maxIterations (U.convert orig_lam))
 
 toBit :: Num a => Bool -> a
 toBit False = 0

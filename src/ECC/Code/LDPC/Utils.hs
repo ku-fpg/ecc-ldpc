@@ -6,40 +6,68 @@ import ECC.Types
 import ECC.Puncture
 import Data.BitMatrix.Loader
 import Data.Char (isDigit)
+import Data.Monoid hiding ((<>))
 import Data.Semigroup
 import qualified Data.Vector.Unboxed as U
+import Data.Ratio
+
+
+
+-- | `mkLDPC` makes and LDPC EEC. The contact here is is that  
+--   encode generates *at least* the (message_length - codeword_length),
+--   decode can read upto the unpunctuated size, but generates
+--   *at least* the message_length. 
 
 mkLDPC :: (MatrixLoader g, MatrixLoader h)
-       => String -> String -> Int
-       -> (g -> U.Vector Bool -> IO (U.Vector Bool))
-       -> (h -> Int -> U.Vector Double -> IO (U.Vector Bool))
+       => String 
+       -> String 
+       -> Int
+       -> Maybe (Ratio Int)
+       -> (g -> Rate -> U.Vector Bool -> U.Vector Bool)
+       -> (h -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool))
        -> IO (ECC IO)
-mkLDPC prefix codeName maxI encoder decoder = do
-   g <- loadMatrix (codeName ++ "/G")   -- with G, we prepend the identity
+mkLDPC prefix codeName maxI optRate encoder decoder = do
+   g <- loadMatrix (codeName ++ "/G") -- with G, we prepend the identity
    print (getNRows g, getNCols g)
+   -- #rows are the message size, #cols + #rows are the (unpunctuated) message
+   let m_length        = getNRows g
    h <- loadMatrix (codeName ++ "/H")
+   -- #rows are number of paritiy checks, #cols are the (unpunctuated) message
    print (getNRows h, getNCols h)
-   let encoder' = encoder g
-   let decoder' = decoder h maxI
+   if getNRows g + getNCols g /= getNCols h then error ("bad code size match" ++ show (getNRows g + getNCols g, getNCols h))
+                                            else return ()
+   let unpunc_c_length = getNCols h
+   let rate = case optRate of
+               Just r -> r
+               Nothing -> m_length % unpunc_c_length
+   print $ rate
+   let c_length = (m_length * denominator rate) `div` numerator rate
+   print $ c_length
+   let encoder' = encoder g rate
+   let decoder' = decoder h rate maxI
+   let unpuncture xs = U.take c_length xs `mappend` U.replicate (getNCols h - c_length) 0
    return $ ECC
-        { name     = "ldpc/" ++ prefix ++ "/" ++ codeName ++ "/" ++ show maxI
-        , encode   = encoder'
-        , decode   = \ inp -> do
-                             res <- decoder' inp
-                             return $ (,True) $ U.take (getNRows g) $ res
-        , message_length  = getNRows g
-        , codeword_length =  getNRows g + getNCols g
+        { name     = "ldpc/" ++ prefix ++ "/" ++ codeName ++ "/" ++ show maxI ++ "/" ++ show (numerator rate) ++ "/" ++  show (denominator rate)
+        , encode   = \ inp -> pure (inp `mappend` U.take (c_length - m_length) (encoder' inp))
+        , decode   = \ inp -> pure 
+                            $ case decoder' (unpuncture inp) of
+                                Nothing  -> (U.take m_length  $ U.map hard inp, False)
+                                Just  r  -> (U.take m_length $ r, True)
+        , message_length = m_length
+        , codeword_length = c_length
         }
 
 mkLDPC_Code :: (MatrixLoader g, MatrixLoader h)
             => String
-            -> (g -> U.Vector Bool -> IO (U.Vector Bool))
-            -> (h -> Int -> U.Vector Double -> IO (U.Vector Bool))
+            -> (g -> Rate -> U.Vector Bool -> U.Vector Bool)
+            -> (h -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool))
             -> Code
-mkLDPC_Code name encoder decoder = punctureTailOfCode $ Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/.<truncation-size>]"]
+mkLDPC_Code name encoder decoder = Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/codeword/message]"]
      $ \ xs -> case xs of
-                ["ldpc",nm,m,n] | nm == name && all isDigit n
-                   -> fmap (: []) $ mkLDPC name m (read n) encoder decoder
+                ["ldpc",nm,m,n,x,y] | nm == name && all isDigit n && all isDigit x && all isDigit y
+                   -> fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder decoder
+                ["ldpc",nm,m,n] | nm == name && all isDigit n 
+                   -> fmap (: []) $ mkLDPC name m (read n) Nothing encoder decoder
                 _  -> return []
 
 

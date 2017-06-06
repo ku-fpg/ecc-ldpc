@@ -23,6 +23,8 @@ import Data.Maybe (catMaybes)
 import Control.Applicative hiding ((<|>))
 import Data.Foldable as F
 
+import ECC.Code.LDPC.Reference.Orig (encoder)
+
 type M a = Matrix a
 type V a = U.Vector a
 
@@ -89,13 +91,8 @@ code = mkLDPC_Code "reference-sparse" encoder decoder
 
 ---------------------------------------------------------------------
 
-encoder :: M Bool -> U.Vector Bool -> IO (U.Vector Bool)
-encoder g v = return $ U.map toBool $ U.convert (getRow 1 (multStd (rowVector $ U.convert (U.map fromBool v)) (((identity (nrows g)) <|> fmap fromBool g))))
-
----------------------------------------------------------------------
-
-decoder :: M Bool -> Int -> U.Vector Double -> IO (U.Vector Bool)
-decoder a maxIterations orig_lam = return $ U.convert (ldpc a maxIterations (U.convert orig_lam))
+decoder :: M Bool -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool)
+decoder a _ maxIterations orig_lam = Just $ U.convert (ldpc a maxIterations (U.convert orig_lam))
 
 ldpc :: M Bool -> Int -> V Double -> V Bool
 ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam

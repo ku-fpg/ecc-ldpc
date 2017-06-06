@@ -28,8 +28,8 @@ import Paths_ecc_ldpc
 
 class MatrixLoader m where
         getMatrix ::  LoaderMatrix -> m
-        getNRows   :: m -> Int
-        getNCols   :: m -> Int
+        getNRows   :: m -> Int                  -- number of rows in the *expanded* matrix
+        getNCols   :: m -> Int                  -- number of cols in the *expanded* matrix
 
 instance MatrixLoader (Matrix Bool) where
      getMatrix (LoaderAline m)  = m
@@ -39,11 +39,11 @@ instance MatrixLoader (Matrix Bool) where
      getNCols = ncols
 
 instance MatrixLoader (QuasiCyclic Integer) where
-     getMatrix (LoaderAline m)  = fromBitMatrix 1 m
-     getMatrix (LoaderMatlab m) = fromBitMatrix 1 m
+     getMatrix (LoaderAline m)  = error "can not load aline as QuasiCyclic"
+     getMatrix (LoaderMatlab m) = error "can not load matlab as QuasiCyclic"
      getMatrix (LoaderQC m)     = m
-     getNRows (QuasiCyclic _ a) = nrows a
-     getNCols (QuasiCyclic _ a) = ncols a
+     getNRows (QuasiCyclic n a) = n * nrows a
+     getNCols (QuasiCyclic n a) = n * ncols a
 
 
 -- The closed internally supported Datatypes, with their efficent representations.
@@ -51,7 +51,7 @@ data LoaderMatrix where
         LoaderAline  :: Matrix Bool         -> LoaderMatrix
         LoaderMatlab :: Matrix Bool         -> LoaderMatrix
         LoaderQC     :: QuasiCyclic Integer -> LoaderMatrix
-        -- deriving Show
+  deriving Show
 
 -- deriving instance Show LoaderMatrix
 
