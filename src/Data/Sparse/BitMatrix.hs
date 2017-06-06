@@ -3,8 +3,8 @@ module Data.Sparse.BitMatrix
   ,toSparseBitM
   ,sparseSet
   ,isSet
-  ,sparseBitNrows
-  ,sparseBitNcols
+  ,nrows
+  ,ncols
   ,(*|)
   )
   where
@@ -42,17 +42,17 @@ sparseSet (SparseBitM _ _ s) = s
 isSet :: SparseBitM -> (Int, Int) -> Bool
 isSet sp loc = loc `S.member` sparseSet sp
 
-sparseBitNrows, sparseBitNcols :: SparseBitM -> Int
-sparseBitNrows (SparseBitM r _ _) = r
-sparseBitNcols (SparseBitM _ c _) = c
+nrows, ncols :: SparseBitM -> Int
+nrows (SparseBitM r _ _) = r
+ncols (SparseBitM _ c _) = c
 
 (*|) :: (Eq a, Show a, Num a, U.Unbox a) =>
   SparseBitM -> V a -> V Bool
-(*|) mat vec = U.fromList (map (fromBit . go) [1..sparseBitNrows mat])
+(*|) mat vec = U.fromList (map (fromBit . go) [1..nrows mat])
   where
     go r
       = U.sum
-      $ U.ifilter (\c _ -> (r, c) `S.member` (sparseSet mat))
+      $ U.ifilter (\c _ -> (r, c+1) `S.member` (sparseSet mat))
                   vec
     {-# INLINE go #-}
 {-# INLINE (*|) #-}

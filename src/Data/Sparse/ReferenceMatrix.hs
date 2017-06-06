@@ -56,7 +56,7 @@ fromList r c a = coerce $ M.matrix r c (`defLookup` a)
   where
     go r
       = U.sum
-      $ U.ifilter (\c _ -> mat !!! (r, c) == 1)
+      $ U.ifilter (\c _ -> mat !!! (r, c+1) == 1)
                   vec
     {-# INLINE go #-}
 {-# INLINE (*|) #-}
