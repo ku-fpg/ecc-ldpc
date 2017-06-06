@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TupleSections #-}
 
 -- Uses a sparse bit matrix and a sparse matrix for soft values
 
@@ -22,6 +23,8 @@ import qualified Data.Set as Set
 import Data.Maybe (catMaybes)
 import Control.Applicative hiding ((<|>))
 import Data.Foldable as F
+import Data.List (groupBy)
+import Data.Function (on)
 
 import ECC.Code.LDPC.Reference.Orig (encoder)
 
@@ -35,8 +38,9 @@ data SparseBitM =
     !Int -- # cols
     (Set (Int, Int))
 
-sparseGetCol :: U.Unbox a => Int -> SparseM a -> V a
-sparseGetCol c sp = U.fromList . map snd . Map.toList $ Map.filterWithKey (\(_, c') _ -> c' == c) sp
+sparseGetCol :: U.Unbox a => Int -> SparseM a -> U.Vector a
+sparseGetCol c sp = U.fromList . Map.elems $ Map.filterWithKey (\(_, c') _ -> c' == c) sp
+{-# INLINE sparseGetCol #-}
 
 toSparseM :: (Eq a, Num a) => M a -> SparseM a
 toSparseM mat =
@@ -70,14 +74,16 @@ sparseNrows, sparseNcols :: SparseBitM -> Int
 sparseNrows (SparseBitM r _ _) = r
 sparseNcols (SparseBitM _ c _) = c
 
-(*|) :: (Num a, U.Unbox a) =>
-  SparseBitM -> V a -> V a
-(*|) mat vec = U.fromList $ map go [1..sparseNrows mat]
+(*|) :: (Eq a, Show a, Num a, U.Unbox a) =>
+  SparseBitM -> V a -> V Bool
+(*|) mat vec = U.fromList (map (fromBit . go) [1..sparseNrows mat])
   where
     go r
       = U.sum
       $ U.ifilter (\c _ -> (r, c) `Set.member` (sparseSet mat))
                   vec
+    {-# INLINE go #-}
+{-# INLINE (*|) #-}
 
 -- If not found, return zero
 (!!!) :: (Num a, Eq a) => SparseM a -> (Int, Int) -> a
@@ -100,11 +106,28 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
     a :: SparseBitM
     a = toSparseBitM a0
 
-    SparseBitM _ _ aSet = a
-    aList = Set.toList aSet
+    SparseBitM _ _ aSet0 = a
+
+    aSet :: [[(Int, Int)]]
+    aSet = groupBy ((==) `on` fst) $ Set.toAscList aSet0
+
+    aList :: [((Int, Int), [Int])]
+    aList = concatMap
+      (\list@((m,_):_) ->
+          let ones = rowOnes m
+          in
+          map (, ones) list)
+      aSet
 
     orig_ne :: SparseM Double
     orig_ne = Map.empty
+
+    rowOnes :: Int -> [Int]
+    rowOnes m =
+      [ j
+      | j <- [1 .. U.length orig_lam]
+      , isSet a (m, j)
+      ]
 
     loop :: Int -> SparseM Double -> V Double -> V Double
     loop !n ne lam
@@ -116,23 +139,22 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
         c_hat = U.map (toBit . hard) lam
 
         ans :: V Bool
-        ans = U.convert $ U.map fromBit (a *| U.convert c_hat)
+        ans = a *| c_hat
 
         ne' :: SparseM Double
         ne' = Map.fromList $ map go aList
           where
-            go (m, n) =
-              ((m, n)
+            go (coords@(m, n), ones) =
+              (coords
               ,-2 * atanh' (product
                    [ tanh (- ((lam U.! (j-1) - ne !!! (m,j)) / 2))
-                   | j <- [1 .. U.length orig_lam]
+                   | j <- ones
                    , j /= n
-                   , isSet a (m, j)
                    ])
               )
 
         lam' :: V Double
-        lam' = U.fromList [ U.foldr (+) (orig_lam U.! (j - 1)) (U.convert (sparseGetCol j ne'))
+        lam' = U.fromList [ (orig_lam U.! (j - 1)) + U.sum (sparseGetCol j ne')
                           | j <- [1 .. U.length lam]
                           ]
 
