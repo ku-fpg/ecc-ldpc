@@ -28,69 +28,12 @@ import Data.Function (on)
 
 import ECC.Code.LDPC.Reference.Orig (encoder)
 
+import Data.Sparse.Matrix as SM
+import Data.Sparse.BitMatrix
+
 type M a = Matrix a
 type V a = U.Vector a
 
-type SparseM a  = Map (Int, Int) a
-data SparseBitM =
-  SparseBitM
-    !Int -- # rows
-    !Int -- # cols
-    (Set (Int, Int))
-
-sparseGetCol :: U.Unbox a => Int -> SparseM a -> U.Vector a
-sparseGetCol c sp = U.fromList . Map.elems $ Map.filterWithKey (\(_, c') _ -> c' == c) sp
-{-# INLINE sparseGetCol #-}
-
-toSparseM :: (Eq a, Num a) => M a -> SparseM a
-toSparseM mat =
-    Map.fromList $ catMaybes (go <$> [1..nrows mat] <*> [1..ncols mat])
-  where
-    go r c
-      | v == 0    = Nothing
-      | otherwise = Just ((r, c), v)
-      where
-        v = mat ! (r, c)
-
-toSparseBitM :: M Bool -> SparseBitM
-toSparseBitM mat
-  = SparseBitM (M.nrows mat) (M.ncols mat)
-  . Set.fromList
-  . catMaybes
-  $ (go <$> [1..M.nrows mat]
-        <*> [1..M.ncols mat])
-  where
-    go m n
-      | mat ! (m, n) == False = Nothing
-      | otherwise             = Just (m, n)
-
-sparseSet :: SparseBitM -> Set (Int, Int)
-sparseSet (SparseBitM _ _ s) = s
-
-isSet :: SparseBitM -> (Int, Int) -> Bool
-isSet sp loc = loc `Set.member` sparseSet sp
-
-sparseNrows, sparseNcols :: SparseBitM -> Int
-sparseNrows (SparseBitM r _ _) = r
-sparseNcols (SparseBitM _ c _) = c
-
-(*|) :: (Eq a, Show a, Num a, U.Unbox a) =>
-  SparseBitM -> V a -> V Bool
-(*|) mat vec = U.fromList (map (fromBit . go) [1..sparseNrows mat])
-  where
-    go r
-      = U.sum
-      $ U.ifilter (\c _ -> (r, c) `Set.member` (sparseSet mat))
-                  vec
-    {-# INLINE go #-}
-{-# INLINE (*|) #-}
-
--- If not found, return zero
-(!!!) :: (Num a, Eq a) => SparseM a -> (Int, Int) -> a
-m !!! (r, c) =
-  case Map.lookup (r, c) m of
-    Just v -> v
-    _      -> 0
 
 code :: Code
 code = mkLDPC_Code "reference-sparse" encoder decoder
@@ -106,7 +49,7 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
     a :: SparseBitM
     a = toSparseBitM a0
 
-    SparseBitM _ _ aSet0 = a
+    aSet0 = sparseSet a
 
     aSet :: [[(Int, Int)]]
     aSet = groupBy ((==) `on` fst) $ Set.toAscList aSet0
@@ -120,7 +63,7 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
       aSet
 
     orig_ne :: SparseM Double
-    orig_ne = Map.empty
+    orig_ne = SM.fromList []
 
     rowOnes :: Int -> [Int]
     rowOnes m =
@@ -142,7 +85,7 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
         ans = a *| c_hat
 
         ne' :: SparseM Double
-        ne' = Map.fromList $ map go aList
+        ne' = SM.fromList $ map go aList
           where
             go (coords@(m, n), ones) =
               (coords
@@ -154,24 +97,11 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
               )
 
         lam' :: V Double
-        lam' = U.fromList [ (orig_lam U.! (j - 1)) + U.sum (sparseGetCol j ne')
+        lam' = U.fromList [ (orig_lam U.! (j - 1)) + ({-# SCC "U.sum" #-} U.sum (SM.getCol j ne'))
                           | j <- [1 .. U.length lam]
                           ]
 
-
-
--- toBits :: M Bool -> BitMatrix CRS
--- toBits = S.fromLists . map (map toBit) . M.toLists
-
-toBit :: Num a => Bool -> a
+toBit :: (Num a) => Bool -> a
 toBit False = 0
 toBit True  = 1
-
--- fromBits :: BitMatrix CRS -> M Bool
--- fromBits = M.fromLists . map (map fromBit) . S.toLists
-
-fromBit :: (Num a, Eq a, Show a) => a -> Bool
-fromBit 0 = False
-fromBit 1 = True
-fromBit n = error $ "fromBit: " ++ show n
 
