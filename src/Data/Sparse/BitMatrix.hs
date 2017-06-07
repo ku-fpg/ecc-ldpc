@@ -42,6 +42,7 @@ sparseSet (SparseBitM _ _ s) = s
 
 isSet :: SparseBitM -> (Int, Int) -> Bool
 isSet sp loc = loc `S.member` sparseSet sp
+{-# INLINE isSet #-}
 
 nrows, ncols :: SparseBitM -> Int
 nrows (SparseBitM r _ _) = r
