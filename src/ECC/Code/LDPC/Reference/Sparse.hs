@@ -51,6 +51,7 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
     a :: SparseBitM
     a = toSparseBitM a0
 
+    aSet0 :: Set (Int, Int)
     aSet0 = sparseSet a
 
     aSet :: [[(Int, Int)]]
@@ -63,6 +64,9 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
           in
           map (, ones) list)
       aSet
+
+    aListMap :: Map (Int, Int) [Int]
+    aListMap = Map.fromList aList
 
     orig_ne :: SparseM Double
     orig_ne = SM.fromList (SM.nrows a) (SM.ncols a) []
@@ -77,30 +81,46 @@ ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
 
     loop :: Int -> SparseM Double -> V Double -> V Double
     loop !n ne lam
-      | U.all (== False) ans = lam
+      -- | U.all (== False) ans = lam
+      | allMultFalse a c_hat = lam
       | n >= maxIterations   = orig_lam
       | otherwise            = loop (n+1) ne' lam'
       where
         c_hat :: V Bit
         c_hat = U.map (toBit . hard) lam
 
-        ans :: V Bool
-        ans = a *| c_hat
+        -- ans :: V Bool
+        -- ans = a *| c_hat
 
         ne' :: SparseM Double
-        ne' = SM.fromList (SM.nrows a) (SM.ncols a) $ map go aList
+        ne' = SM.sparseMatrix (SM.nrows a) (SM.ncols a) go
           where
-            go (coords@(m, n), ones) =
-              (coords
-              ,-2 * atanh' (product
-                   [ tanh (- ((lam U.! (j-1) - ne !!! (m,j)) / 2))
-                   | j <- ones
-                   , j /= n
-                   ])
-              )
+            go (m, n)
+              | isSet a (m, n) =
+                Just $ -2 * atanh' (product
+                  [ tanh (- ((lam U.! (j-1) - ne !!! (m,j)) / 2))
+                  | j <- ones
+                  , j /= n
+                  ])
+              | otherwise = Nothing
+              where
+                Just ones = Map.lookup (m, n) aListMap
+
+
+        -- ne' :: SparseM Double
+        -- ne' = SM.fromList (SM.nrows a) (SM.ncols a) $ map go aList
+        --   where
+        --     go (coords@(m, n), ones) =
+        --       (coords
+        --       ,-2 * atanh' (product
+        --            [ tanh (- ((lam U.! (j-1) - ne !!! (m,j)) / 2))
+        --            | j <- ones
+        --            , j /= n
+        --            ])
+        --       )
 
         lam' :: V Double
-        lam' = U.fromList [ (orig_lam U.! (j - 1)) + ({-# SCC "U.sum" #-} U.sum (SM.getCol j ne'))
+        lam' = U.fromList [ (orig_lam U.! (j - 1)) + (SM.colSum j ne')
                           | j <- [1 .. U.length lam]
                           ]
 

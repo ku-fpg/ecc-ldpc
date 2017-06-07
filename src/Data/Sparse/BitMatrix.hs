@@ -6,6 +6,7 @@ module Data.Sparse.BitMatrix
   ,nrows
   ,ncols
   ,(*|)
+  ,allMultFalse
   )
   where
 
@@ -48,7 +49,7 @@ ncols (SparseBitM _ c _) = c
 
 (*|) :: (Eq a, Show a, Num a, U.Unbox a) =>
   SparseBitM -> V a -> V Bool
-(*|) mat vec = U.fromList (map (fromBit . go) [1..nrows mat])
+(*|) mat vec = {-# SCC "(*|)" #-} U.fromList (map (fromBit . go) [1..nrows mat])
   where
     go r
       = U.sum
@@ -56,6 +57,19 @@ ncols (SparseBitM _ c _) = c
                   vec
     {-# INLINE go #-}
 {-# INLINE (*|) #-}
+
+-- | Equivalent to `all (== False) (m *| v)`
+allMultFalse :: (Eq a, Show a, Num a, U.Unbox a) =>
+  SparseBitM -> V a -> Bool
+allMultFalse mat vec = {-# SCC "allMultFalse" #-}
+    and (map (not . fromBit . go) [1..nrows mat])
+  where
+    go r
+      = U.sum
+      $ U.ifilter (\c _ -> (r, c+1) `S.member` (sparseSet mat))
+                  vec
+    {-# INLINE go #-}
+{-# INLINE allMultFalse #-}
 
 fromBit :: (Num a, Eq a, Show a) => a -> Bool
 fromBit 0 = False
