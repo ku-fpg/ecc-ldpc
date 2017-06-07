@@ -36,7 +36,7 @@ type V a = U.Vector a
 
 
 code :: Code
-code = mkLDPC_Code "reference-sparse" encoder decoder
+code = mkLDPC_Code "sparse" encoder decoder
 
 ---------------------------------------------------------------------
 
