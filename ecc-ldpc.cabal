@@ -12,8 +12,9 @@ build-type:          Simple
 cabal-version:       >=1.8
 
 data-files:
-        codes/jpl.1K/*.alist
-        codes/jpl.1K/*.m
+        codes/jpl.1024.4.5/*.m
+        codes/jpl.1024.4.5/*.q
+        codes/jpl.1024.4.5/*.alist
 
 -- Eventually, some of the matrix-specific modules may be factored into a separate package.
 library
@@ -24,6 +25,8 @@ library
                 ECC.Code.LDPC.Utils,
                 Data.BitVector.Sparse,
                 ECC.Code.LDPC.ElimTanh,
+                ECC.Code.LDPC.Fast.Arraylet,
+                ECC.Code.LDPC.Fast.Encoder,
                 Data.BitMatrix.Alist,
                 Data.BitVector.Word64,
                 Data.BitMatrix.Word64,
