@@ -27,21 +27,21 @@ import Paths_ecc_ldpc
 -- So we support multi-unpacking, based on the name.
 
 class MatrixLoader m where
-        getMatrix ::  LoaderMatrix -> m
+        getMatrix ::  LoaderMatrix -> Maybe m
         getNRows   :: m -> Int                  -- number of rows in the *expanded* matrix
         getNCols   :: m -> Int                  -- number of cols in the *expanded* matrix
 
 instance MatrixLoader (Matrix Bool) where
-     getMatrix (LoaderAline m)  = m
-     getMatrix (LoaderMatlab m) = m
-     getMatrix (LoaderQC m)     = toBitMatrix m
+     getMatrix (LoaderAline m)  = pure m
+     getMatrix (LoaderMatlab m) = pure m
+     getMatrix (LoaderQC m)     = pure $ toBitMatrix m
      getNRows = nrows
      getNCols = ncols
 
 instance MatrixLoader (QuasiCyclic Integer) where
-     getMatrix (LoaderAline m)  = error "can not load aline as QuasiCyclic"
-     getMatrix (LoaderMatlab m) = error "can not load matlab as QuasiCyclic"
-     getMatrix (LoaderQC m)     = m
+     getMatrix (LoaderAline m)  = fail "can not load aline as QuasiCyclic"
+     getMatrix (LoaderMatlab m) = fail "can not load matlab as QuasiCyclic"
+     getMatrix (LoaderQC m)     = pure m
      getNRows (QuasiCyclic n a) = n * nrows a
      getNCols (QuasiCyclic n a) = n * ncols a
 
@@ -56,23 +56,27 @@ data LoaderMatrix where
 -- deriving instance Show LoaderMatrix
 
 loaders :: [(String,FilePath -> IO LoaderMatrix)]
-loaders = [("alist",    fmap (LoaderAline . unAlist . read)     . readFile)
+loaders = [("q",        fmap (LoaderQC . read)                  . readFile)
+          ,("alist",    fmap (LoaderAline . unAlist . read)     . readFile)
           ,("m",        fmap (LoaderMatlab . unMatlab . read)   . readFile)
-          ,("q",        fmap (LoaderQC . read)                  . readFile)
           ]
 
 loadMatrix :: MatrixLoader m => FilePath -> IO m
 loadMatrix filePath = do
         dat <- getDataDir
-        print dat
         let prefixes = ["codes",dat ++ "/codes"]
         filePaths <- sequence [ do ok <- doesFileExist file
+                                   print (file,ok)
                                    return (ok,loader file)
                               | (suffix,loader) <- loaders
                               , prefix <- prefixes
                               , let file = prefix ++ "/" ++ filePath ++ "." ++ suffix
                               ]
-        case [ loader | (True,loader) <- filePaths ] of
-                []         -> error $ "can not find any matrix files in " ++ show filePath
-                (loader:_) -> loader >>= return . getMatrix
-
+        let go [] = error $ "can not find any matrix files in " ++ show filePath
+            go (loader:rest) = do
+                ld <- loader 
+                case getMatrix ld of
+                   Nothing -> go rest
+                   Just m -> return m
+                
+        go [ loader | (True,loader) <- filePaths ]
