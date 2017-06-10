@@ -8,6 +8,7 @@ import ECC.Puncture
 import Data.Char (isDigit)
 import Data.Matrix
 import Data.Bit
+import Data.Bits
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as V
 import qualified Data.Matrix.QuasiCyclic as Q
@@ -18,6 +19,7 @@ type V a = U.Vector a
 
 -- An arraylet is a small array, that acts like a NxN matrix, with one element in each row and column,
 -- (a rotated identity matrix, for example). We index explicity start at row/column *0*.
+-- The Int argument is the rotation.
 data Arraylet a = Arraylet Int (U.Vector a)
  deriving Show
 
@@ -31,11 +33,18 @@ sizeOfArraylet (Arraylet n _) = n
 data Matrixlet a = Matrixlet Int (Matrix (Maybe (Arraylet a)))
  deriving Show
  
-initMatrixlet :: forall a . a -> Q.QuasiCyclic Integer -> Matrixlet a
+initMatrixlet :: forall a . U.Unbox a => a -> Q.QuasiCyclic Integer -> Matrixlet a
 initMatrixlet zero (Q.QuasiCyclic sz m) = Matrixlet sz (fmap f m)
     where f :: Integer -> Maybe (Arraylet a)
           f 0 = Nothing
-          f n = undefined
+          f n | popCount n == 1 = Just $ Arraylet (g n) (U.replicate sz zero)
+              | otherwise       = error $ "QuasiCyclic matrix has non-powers of two initial value of " ++ show n 
+
+          -- The number must be a power of two, because there is only one bit set.
+          g :: Integer -> Int
+          g x | x `testBit` 0 = 0
+              | x == 0        = error "got to zero; should never happen"
+              | otherwise = 1 + g (x `shiftR` 1)
 
 -- A bit matrix of arraylets.
 data BitMatrixlet = BitMatrixlet Int (Matrix (Maybe Int))
@@ -75,7 +84,7 @@ ldpc :: Q.QuasiCyclic Integer -> Int -> V Double -> V Bool
 ldpc a maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 orig_ne orig_lam
   where
 
-    msg = show a
+    msg = "" -- show a ++ "\n" ++ show (initMatrixlet (0 :: Double) a)
 
     a' = toBits (Q.toBitMatrix a)
 
