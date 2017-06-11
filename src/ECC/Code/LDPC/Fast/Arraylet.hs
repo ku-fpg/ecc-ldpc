@@ -145,7 +145,7 @@ fromBits :: M Bit -> M Bool
 fromBits = fmap fromBit
 
 ldpc :: Matrixlet Double -> Int -> V Double -> V Bool
-ldpc mLet maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 orig_ne orig_lam
+ldpc mLet maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 mLet orig_lam
   where
     a' :: M Bit
     a' = toMatrix 0 $ mapMatrixlet (const 1) $ mLet
@@ -155,40 +155,31 @@ ldpc mLet maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 orig_ne o
     orig_ne :: M Double
     orig_ne = fmap (const 0) $ a'
 
-    loop :: Int -> M Double -> V Double -> V Double
+    loop :: Int -> Matrixlet Double -> V Double -> V Double
     loop !n ne lam
-        | ans /= ans' = error $ "ans differs from ans' " ++ show (ans,ans')
         | U.all (== False) ans     = lam
         | n >= maxIterations       = orig_lam
         | otherwise                = loop (n+1) ne' lam'
       where
-        c_hat :: V Bit
-        c_hat = U.map (toBit . hard) lam
-
-        -- was bug here: needed to getCol, not getRow (which was a single element)
         ans :: V Bool
-        ans = U.convert $ fmap fromBit $ getCol 1 (a' `multStd` colVector (U.convert c_hat))
-
-        ans' :: V Bool
-        ans' = foldColsMatrixlet (/=) $ matrixMatrixlet mLet $ \ (r,c) -> hard (lam U.! c)
+        ans = foldColsMatrixlet (/=) $ matrixMatrixlet mLet $ \ (r,c) -> hard (lam U.! c)
         
+        ne_old :: M Double
+        ne_old = toMatrix 0 ne
+
         -- was bug here: V's start at index 0, not 1
-        ne' :: M Double
-        ne' = matrix (nrows orig_ne) (ncols orig_ne) $ \ (m,n) ->
-                if a' ! (m,n) == 1
-                then
-                   -- was bug here: we need to cap atanh's answer
+        ne' :: Matrixlet Double
+        ne' = matrixMatrixlet ne $ \ (m,n) -> 
                     -2 * atanh' (product
-                        [ tanh (- ((lam U.! (j-1) - ne ! (m,j)) / 2))
-                        | j <- [1 .. U.length orig_lam]
+                        [ tanh (- ((lam U.! j - v) / 2))
+                        | j <- map pred [1 .. U.length orig_lam]
                         , j /= n
-                        , a' ! (m,j) == 1
+                        , Just v <- [ne `lookupMatrixlet` (m,j)]
                         ])
-                else 0
 
         -- Was bug here: needed to add the orig_lam
         lam' :: V Double
-        lam' = U.fromList [ U.foldr (+) (orig_lam U.! (j - 1)) (U.convert (getCol j ne'))
+        lam' = U.fromList [ U.foldr (+) (orig_lam U.! (j - 1)) (U.convert (getCol j $ toMatrix 0 ne'))
                           | j <- [1 .. U.length lam]
                           ]
 
