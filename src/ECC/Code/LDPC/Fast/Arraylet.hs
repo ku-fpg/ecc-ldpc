@@ -167,14 +167,6 @@ fromBits = fmap fromBit
 ldpc :: Matrixlet Double -> Int -> V Double -> V Bool
 ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLet orig_lam
   where
-    a' :: M Bit
-    a' = toMatrix 0 $ mapMatrixlet (const 1) $ mLet
-
-    msg = show $ foldRowsMatrixlet (+) $ mapMatrixlet (const (1 :: Int)) mLet
-
-    orig_ne :: M Double
-    orig_ne = fmap (const 0) $ a'
-
     cols :: V.Vector [Int]
     cols = foldColsMatrixlet' (\ (r,c) _ -> [c]) (++) mLet
 
@@ -190,7 +182,6 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
         ne_tanh :: V.Vector [(Int,Double)]
         ne_tanh = foldColsMatrixlet' (\ (m,n) v -> [(n, tanh (- ((lam U.! n - v) / 2)))]) (++) ne
 
-        -- was bug here: V's start at index 0, not 1
         ne' :: Matrixlet Double
         ne' = matrixMatrixlet ne $ \ (m,n) -> 
                   -2 * atanh' (product [ v | (j,v) <- ne_tanh V.! m, j /= n ])
