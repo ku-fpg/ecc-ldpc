@@ -66,7 +66,6 @@ loadMatrix filePath = do
         dat <- getDataDir
         let prefixes = ["codes",dat ++ "/codes"]
         filePaths <- sequence [ do ok <- doesFileExist file
-                                   print (file,ok)
                                    return (ok,loader file)
                               | (suffix,loader) <- loaders
                               , prefix <- prefixes
