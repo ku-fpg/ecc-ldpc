@@ -93,12 +93,15 @@ foldRowsMatrixlet f (Matrixlet n a) = U.concat
     | c <- [1..ncols a]
     ]
 
-toBitMatrix :: Matrixlet Bool -> M Bool
-toBitMatrix = undefined
+toMatrix :: U.Unbox a => a -> Matrixlet a -> Matrix a
+toMatrix def mLet@(Matrixlet sz m) = matrix (sz * nrows m) (sz * ncols m) $ \ (x,y) ->
+    case mLet `lookupMatrixlet` (x-1,y-1) of
+      Nothing -> def
+      Just v -> v
 
 lookupMatrixlet :: U.Unbox a => Matrixlet a -> (Int,Int) -> Maybe a
 lookupMatrixlet (Matrixlet sz m) (r,c) = 
-    case m ! (r1,c1) of
+    case m ! (r1+1,c1+1) of
       Nothing -> Nothing
       Just arr -> lookupArraylet arr (r2,c2)
       
@@ -120,7 +123,8 @@ encoder g _ v = U.map toBool $ U.convert (getRow 1 (multStd (rowVector $ U.conve
 ---------------------------------------------------------------------
 
 decoder :: Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool)
-decoder a rate maxIterations orig_lam = Just $ U.convert (ldpc a maxIterations (U.convert orig_lam))
+decoder a = \ rate maxIterations orig_lam -> Just $ U.convert (ldpc mLet maxIterations (U.convert orig_lam))
+  where mLet = initMatrixlet 0 a
 
 toBit :: Num a => Bool -> a
 toBit False = 0
@@ -140,19 +144,16 @@ toBits = fmap toBit
 fromBits :: M Bit -> M Bool
 fromBits = fmap fromBit
 
-ldpc :: Q.QuasiCyclic Integer -> Int -> V Double -> V Bool
-ldpc a maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 orig_ne orig_lam
+ldpc :: Matrixlet Double -> Int -> V Double -> V Bool
+ldpc mLet maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 orig_ne orig_lam
   where
-
-    mLet :: Matrixlet Double
-    mLet = initMatrixlet 0 a
+    a' :: M Bit
+    a' = toMatrix 0 $ mapMatrixlet (const 1) $ mLet
 
     msg = show $ foldRowsMatrixlet (+) $ mapMatrixlet (const (1 :: Int)) mLet
 
-    a' = toBits (Q.toBitMatrix a)
-
     orig_ne :: M Double
-    orig_ne = fmap (const 0) $ Q.toBitMatrix a
+    orig_ne = fmap (const 0) $ a'
 
     loop :: Int -> M Double -> V Double -> V Double
     loop !n ne lam
