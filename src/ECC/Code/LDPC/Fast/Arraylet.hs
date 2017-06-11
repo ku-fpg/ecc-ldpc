@@ -186,16 +186,14 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
       where
         ans :: V Bool
         ans = foldColsMatrixlet (/=) $ matrixMatrixlet mLet $ \ (r,c) -> hard (lam U.! c)
+        
+        ne_tanh :: V.Vector [(Int,Double)]
+        ne_tanh = foldColsMatrixlet' (\ (m,n) v -> [(n, tanh (- ((lam U.! n - v) / 2)))]) (++) ne
 
         -- was bug here: V's start at index 0, not 1
         ne' :: Matrixlet Double
         ne' = matrixMatrixlet ne $ \ (m,n) -> 
-                  -2 * atanh' (product
-                        [ tanh (- ((lam U.! j - v) / 2))
-                        | j <- cols V.! m -- map pred [1 .. U.length orig_lam]
-                        , j /= n
-                        , Just v <- [ne `lookupMatrixlet` (m,j)]
-                        ])
+                  -2 * atanh' (product [ v | (j,v) <- ne_tanh V.! m, j /= n ])
 
         lam' :: V Double
         lam' = U.zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
