@@ -44,9 +44,18 @@ foldRowsArraylet :: U.Unbox a => Arraylet a -> U.Vector a
 foldRowsArraylet (Arraylet sz m) = b `mappend` a
     where (a,b) = U.splitAt (U.length m - sz) m
 
+foldRowsArraylet' :: U.Unbox a => ((Int,Int) -> a -> b) -> Arraylet a -> V.Vector b
+foldRowsArraylet' k (Arraylet off m) = V.generate sz $ \ ix -> let !ix' = (ix + (sz - off)) `mod` sz in
+                  k (ix',(ix' + off) `mod` sz) (m U.! ix')
+  where !sz = U.length m
+
 foldColsArraylet :: U.Unbox a => Arraylet a -> U.Vector a
 foldColsArraylet (Arraylet sz m) = m
 
+foldColsArraylet' :: U.Unbox a => ((Int,Int) -> a -> b) -> Arraylet a -> V.Vector b
+foldColsArraylet' k (Arraylet off m) = V.generate sz $ \ ix -> k (ix,(ix + off) `mod` sz) (m U.! ix)
+  where !sz = U.length m
+      
 --indexByRow :: Arraylet a -> Int -> a
 --indexByRow (Arraylet a _) = undefined
 
@@ -86,10 +95,21 @@ foldColsMatrixlet f (Matrixlet n a) = U.concat
     | r <- [1..nrows a]
     ]
 
+foldColsMatrixlet' :: U.Unbox a => ((Int,Int) -> a -> b) -> (b -> b -> b) -> Matrixlet a -> V.Vector b
+foldColsMatrixlet' f g (Matrixlet sz a) = V.concat
+    [ foldr1 (V.zipWith g) [ foldColsArraylet' (\ (r',c') a -> f ((r-1) * sz + r',(c-1) * sz + c') a) x | c <- [1..ncols a], Just x <- [a ! (r,c)]]
+    | r <- [1..nrows a]
+    ]
 
 foldRowsMatrixlet :: U.Unbox a => (a -> a -> a) -> Matrixlet a -> U.Vector a
 foldRowsMatrixlet f (Matrixlet n a) = U.concat
     [ foldr1 (U.zipWith f) [ foldRowsArraylet x | r <- [1..nrows a], Just x <- [a ! (r,c)]]
+    | c <- [1..ncols a]
+    ]
+
+foldRowsMatrixlet' :: U.Unbox a => ((Int,Int) -> a -> b) -> (b -> b -> b) -> Matrixlet a -> V.Vector b
+foldRowsMatrixlet' f g (Matrixlet sz a) = V.concat
+    [ foldr1 (V.zipWith g) [ foldRowsArraylet' (\ (r',c') a -> f ((r-1) * sz + r',(c-1) * sz + c') a) x | r <- [1..nrows a], Just x <- [a ! (r,c)]]
     | c <- [1..ncols a]
     ]
 
@@ -145,7 +165,7 @@ fromBits :: M Bit -> M Bool
 fromBits = fmap fromBit
 
 ldpc :: Matrixlet Double -> Int -> V Double -> V Bool
-ldpc mLet maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 mLet orig_lam
+ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLet orig_lam
   where
     a' :: M Bit
     a' = toMatrix 0 $ mapMatrixlet (const 1) $ mLet
@@ -155,6 +175,9 @@ ldpc mLet maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 mLet orig
     orig_ne :: M Double
     orig_ne = fmap (const 0) $ a'
 
+    cols :: V.Vector [Int]
+    cols = foldColsMatrixlet' (\ (r,c) _ -> [c]) (++) mLet
+
     loop :: Int -> Matrixlet Double -> V Double -> V Double
     loop !n ne lam
         | U.all (== False) ans     = lam
@@ -163,23 +186,22 @@ ldpc mLet maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 mLet orig
       where
         ans :: V Bool
         ans = foldColsMatrixlet (/=) $ matrixMatrixlet mLet $ \ (r,c) -> hard (lam U.! c)
-        
-        ne_old :: M Double
-        ne_old = toMatrix 0 ne
 
         -- was bug here: V's start at index 0, not 1
         ne' :: Matrixlet Double
         ne' = matrixMatrixlet ne $ \ (m,n) -> 
-                    -2 * atanh' (product
+                  -2 * atanh' (product
                         [ tanh (- ((lam U.! j - v) / 2))
-                        | j <- map pred [1 .. U.length orig_lam]
+                        | j <- cols V.! m -- map pred [1 .. U.length orig_lam]
                         , j /= n
                         , Just v <- [ne `lookupMatrixlet` (m,j)]
                         ])
 
-        -- Was bug here: needed to add the orig_lam
         lam' :: V Double
-        lam' = U.fromList [ U.foldr (+) (orig_lam U.! (j - 1)) (U.convert (getCol j $ toMatrix 0 ne'))
+        lam' = U.zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
+
+{-
+            U.fromList [ U.foldr (+) (orig_lam U.! (j - 1)) (U.convert (getCol j $ toMatrix 0 ne'))
                           | j <- [1 .. U.length lam]
                           ]
-
+-}
