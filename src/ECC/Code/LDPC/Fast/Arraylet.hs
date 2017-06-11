@@ -1,5 +1,5 @@
 {-# LANGUAGE BangPatterns, RankNTypes, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, DeriveFunctor #-}
 module ECC.Code.LDPC.Fast.Arraylet where
 
 import ECC.Code.LDPC.Utils
@@ -19,17 +19,38 @@ type V a = U.Vector a
 
 -- An arraylet is a small array, that acts like a NxN matrix, with one element in each row and column,
 -- (a rotated identity matrix, for example). We index explicity start at row/column *0*.
--- The Int argument is the rotation.
+-- The Int argument is the rotation. The row index is the index into the array.
 data Arraylet a = Arraylet Int (U.Vector a)
- deriving Show
+ deriving (Show)
+
+mapArraylet :: (U.Unbox a, U.Unbox b) => (a -> b) -> Arraylet a -> Arraylet b
+mapArraylet f (Arraylet sz a) = Arraylet sz (U.map f a)
 
 sizeOfArraylet :: Arraylet a -> Int
 sizeOfArraylet (Arraylet n _) = n
 
+lookupArraylet :: U.Unbox a => Arraylet a -> (Int,Int) -> Maybe a
+lookupArraylet (Arraylet off m) (r,c)
+     | r < 0 || c < 0           = error "arraylet lookup out of bounds"
+     | r >= len || c >= len     = error "arraylet lookup out of bounds"
+     | r == (c - off) `mod` len = Just $ m U.! r
+     | otherwise                = Nothing
+  where len = U.length m
+        
+arrayArraylet :: forall a . U.Unbox a => Int -> Int -> ((Int,Int) -> a) -> Arraylet a
+arrayArraylet sz off k = Arraylet off $ U.generate sz $ \ r -> k (r,(r + off) `mod` sz)
+
+foldRowsArraylet :: U.Unbox a => Arraylet a -> U.Vector a
+foldRowsArraylet (Arraylet sz m) = b `mappend` a
+    where (a,b) = U.splitAt (U.length m - sz) m
+
+foldColsArraylet :: U.Unbox a => Arraylet a -> U.Vector a
+foldColsArraylet (Arraylet sz m) = m
+
 --indexByRow :: Arraylet a -> Int -> a
 --indexByRow (Arraylet a _) = undefined
 
--- A matrix of arraylets, the same size
+-- A matrix of arraylets, all the same size. 0-indexed.
 data Matrixlet a = Matrixlet Int (Matrix (Maybe (Arraylet a)))
  deriving Show
  
@@ -45,6 +66,45 @@ initMatrixlet zero (Q.QuasiCyclic sz m) = Matrixlet sz (fmap f m)
           g x | x `testBit` 0 = 0
               | x == 0        = error "got to zero; should never happen"
               | otherwise = 1 + g (x `shiftR` 1)
+
+
+matrixMatrixlet :: forall a b . U.Unbox b => Matrixlet a -> ((Int,Int) -> b) -> Matrixlet b
+matrixMatrixlet (Matrixlet sz a) k = Matrixlet sz $ matrix (nrows a) (ncols a) k'
+  where
+      k' :: (Int, Int) -> Maybe (Arraylet b)
+      k' (r,c) = case a ! (r,c) of
+                   Nothing -> Nothing 
+                   Just (Arraylet off _) -> Just $ arrayArraylet sz off $ \ (r',c') -> k ((r-1) * sz + r',(c-1) * sz + c')
+
+mapMatrixlet :: (U.Unbox a, U.Unbox b) => (a -> b) -> Matrixlet a -> Matrixlet b
+mapMatrixlet f (Matrixlet sz a) = Matrixlet sz (fmap (fmap (mapArraylet f)) a)
+
+-- Assumes there is always one value on every column
+foldColsMatrixlet :: U.Unbox a => (a -> a -> a) -> Matrixlet a -> U.Vector a
+foldColsMatrixlet f (Matrixlet n a) = U.concat
+    [ foldr1 (U.zipWith f) [ foldColsArraylet x | c <- [1..ncols a], Just x <- [a ! (r,c)]]
+    | r <- [1..nrows a]
+    ]
+
+
+foldRowsMatrixlet :: U.Unbox a => (a -> a -> a) -> Matrixlet a -> U.Vector a
+foldRowsMatrixlet f (Matrixlet n a) = U.concat
+    [ foldr1 (U.zipWith f) [ foldRowsArraylet x | r <- [1..nrows a], Just x <- [a ! (r,c)]]
+    | c <- [1..ncols a]
+    ]
+
+toBitMatrix :: Matrixlet Bool -> M Bool
+toBitMatrix = undefined
+
+lookupMatrixlet :: U.Unbox a => Matrixlet a -> (Int,Int) -> Maybe a
+lookupMatrixlet (Matrixlet sz m) (r,c) = 
+    case m ! (r1,c1) of
+      Nothing -> Nothing
+      Just arr -> lookupArraylet arr (r2,c2)
+      
+    where (r1,r2) = r `divMod` sz
+          (c1,c2) = c `divMod` sz
+          
 
 -- A bit matrix of arraylets.
 data BitMatrixlet = BitMatrixlet Int (Matrix (Maybe Int))
@@ -84,7 +144,10 @@ ldpc :: Q.QuasiCyclic Integer -> Int -> V Double -> V Bool
 ldpc a maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 orig_ne orig_lam
   where
 
-    msg = "" -- show a ++ "\n" ++ show (initMatrixlet (0 :: Double) a)
+    mLet :: Matrixlet Double
+    mLet = initMatrixlet 0 a
+
+    msg = show $ foldRowsMatrixlet (+) $ mapMatrixlet (const (1 :: Int)) mLet
 
     a' = toBits (Q.toBitMatrix a)
 
@@ -93,6 +156,7 @@ ldpc a maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 orig_ne orig
 
     loop :: Int -> M Double -> V Double -> V Double
     loop !n ne lam
+        | ans /= ans' = error $ "ans differs from ans' " ++ show (ans,ans')
         | U.all (== False) ans     = lam
         | n >= maxIterations       = orig_lam
         | otherwise                = loop (n+1) ne' lam'
@@ -104,6 +168,9 @@ ldpc a maxIterations orig_lam = traceShow msg $ U.map hard $ loop 0 orig_ne orig
         ans :: V Bool
         ans = U.convert $ fmap fromBit $ getCol 1 (a' `multStd` colVector (U.convert c_hat))
 
+        ans' :: V Bool
+        ans' = foldColsMatrixlet (/=) $ matrixMatrixlet mLet $ \ (r,c) -> hard (lam U.! c)
+        
         -- was bug here: V's start at index 0, not 1
         ne' :: M Double
         ne' = matrix (nrows orig_ne) (ncols orig_ne) $ \ (m,n) ->
