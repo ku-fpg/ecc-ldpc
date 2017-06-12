@@ -14,6 +14,8 @@ import qualified Data.Vector as V
 import qualified Data.Matrix.QuasiCyclic as Q
 import Debug.Trace
 
+import qualified ECC.Code.LDPC.Fast.Encoder as E
+
 type M a = Matrix a
 type V a = U.Vector a
 
@@ -133,12 +135,7 @@ lookupMatrixlet (Matrixlet sz m) (r,c) =
 data BitMatrixlet = BitMatrixlet Int (Matrix (Maybe Int))
 
 code :: Code
-code = mkLDPC_Code "arraylet" encoder decoder
-
----------------------------------------------------------------------
-
-encoder :: M Bool -> Rate -> U.Vector Bool -> U.Vector Bool
-encoder g _ v = U.map toBool $ U.convert (getRow 1 (multStd (rowVector $ U.convert (U.map fromBool v)) ((fmap fromBool g))))
+code = mkLDPC_Code "arraylet" E.encoder decoder
 
 ---------------------------------------------------------------------
 
