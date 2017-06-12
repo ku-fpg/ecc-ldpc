@@ -133,7 +133,7 @@ lookupMatrixlet (Matrixlet sz m) (r,c) =
 data BitMatrixlet = BitMatrixlet Int (Matrix (Maybe Int))
 
 code :: Code
-code = mkLDPC_Code "arraylet" encoder decoder
+code = mkLDPC_Code "arraylet-min" encoder decoder
 
 ---------------------------------------------------------------------
 
@@ -180,11 +180,13 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
         ans = foldColsMatrixlet (/=) $ matrixMatrixlet mLet $ \ (r,c) -> hard (lam U.! c)
         
         ne_tanh :: V.Vector [(Int,Double)]
-        ne_tanh = foldColsMatrixlet' (\ (m,n) v -> [(n, tanh (- ((lam U.! n - v) / 2)))]) (++) ne
+        ne_tanh = foldColsMatrixlet' (\ (m,n) v -> [(n, (- ((lam U.! n - v))))]) (++) ne
 
         ne' :: Matrixlet Double
         ne' = matrixMatrixlet ne $ \ (m,n) -> 
-                  -2 * atanh' (product [ v | (j,v) <- ne_tanh V.! m, j /= n ])
+                 (-3/4) * (foldr1 min' [ v | (j,v) <- ne_tanh V.! m, j /= n ])
+                 where  {-# INLINE min' #-}
+                        min' x y = signum x * signum y * min (abs x) (abs y)
 
         lam' :: V Double
         lam' = U.zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
