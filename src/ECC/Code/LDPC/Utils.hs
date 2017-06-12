@@ -84,6 +84,10 @@ newtype MinSum a = MinSum a
 {-# INLINE metric #-}
 metric a b = min (abs a) (abs b) * signum a * signum b
 
+{-# INLINE metricDouble #-}
+metricDouble :: Double -> Double -> Double
+metricDouble a b = min (abs a) (abs b) * signum a * signum b
+
 instance (Ord a, Num a) => Semigroup (MinSum a) where
         {-# INLINE (<>) #-}
         (MinSum a) <> (MinSum b) = MinSum $ metric a b
