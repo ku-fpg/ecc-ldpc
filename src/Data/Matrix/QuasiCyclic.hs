@@ -40,8 +40,7 @@ fromBitMatrix sz a | toBitMatrix q == a = q
                   ]
                 | m <- [1,(sz+1)..nrows a]
                 ]
-          zero = bit 0 `xor` bit 0 -- Hack to get a zero, without just the Bits dictionary.
-
+          zero = zeroBits
 
 cycleSize :: Bits a => QuasiCyclic a -> Int
 cycleSize (QuasiCyclic n a) = n
