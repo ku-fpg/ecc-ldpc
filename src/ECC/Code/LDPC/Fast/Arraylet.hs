@@ -183,14 +183,7 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
         ne_tanh = foldColsMatrixlet' (\ (m,n) v -> [(n, tanh (- ((lam U.! n - v) / 2)))]) (++) ne
 
         ne' :: Matrixlet Double
-        ne' = matrixMatrixlet ne $ \ (m,n) -> 
-                  -2 * atanh' (product [ v | (j,v) <- ne_tanh V.! m, j /= n ])
+        ne' = matrixMatrixlet ne $ \ (m,n) -> -2 * atanh' (product [ v | (j,v) <- ne_tanh V.! m, j /= n ])
 
         lam' :: V Double
         lam' = U.zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
-
-{-
-            U.fromList [ U.foldr (+) (orig_lam U.! (j - 1)) (U.convert (getCol j $ toMatrix 0 ne'))
-                          | j <- [1 .. U.length lam]
-                          ]
--}
