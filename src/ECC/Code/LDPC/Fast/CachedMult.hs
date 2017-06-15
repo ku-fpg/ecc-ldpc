@@ -77,6 +77,10 @@ lookupArraylet (Arraylet off m) (r,c)
 arrayArraylet :: forall a . U.Unbox a => Int -> Int -> ((Int,Int) -> a) -> Arraylet a
 arrayArraylet sz off k = Arraylet off $ U.generate sz $ \ r -> k (r,(r + off) `mod` sz)
 
+-- | An indexed map over arraylets (indexing based on 'arrayArraylet')
+imapArraylet :: forall a b . (U.Unbox a, U.Unbox b) => Int -> ((Int,Int) -> a -> b) -> Arraylet a -> Arraylet b
+imapArraylet sz k (Arraylet off arr) = Arraylet off $ U.imap (\ r v -> k (r,(r + off) `mod` sz) v) arr
+
 foldRowsArraylet :: U.Unbox a => Arraylet a -> U.Vector a
 foldRowsArraylet (Arraylet sz m) = b `mappend` a
     where (a,b) = U.splitAt (U.length m - sz) m
@@ -121,6 +125,21 @@ matrixMatrixlet (Matrixlet sz a) k = Matrixlet sz $ matrix (nrows a) (ncols a) k
       k' (r,c) = case a ! (r,c) of
                    Nothing -> Nothing
                    Just (Arraylet off _) -> Just $ arrayArraylet sz off $ \ (r',c') -> k ((r-1) * sz + r',(c-1) * sz + c')
+
+-- | Indexed map over matrixlets (based on 'matrixMatrixlet')
+imapMatrixlet :: forall a b . (U.Unbox a, U.Unbox b) => Matrixlet a -> ((Int,Int) -> a -> b) -> Matrixlet b
+imapMatrixlet (Matrixlet sz a) k = Matrixlet sz $ matrix (nrows a) (ncols a) k'
+  where
+      k' :: (Int, Int) -> Maybe (Arraylet b)
+      k' (r,c) =
+        case a ! (r,c) of
+          Nothing -> Nothing
+          Just arr ->
+            Just $ flip (imapArraylet sz) arr $ \ (r',c') v ->
+              let r'' = (r-1) * sz + r'
+                  c'' = (c-1) * sz + c'
+              in
+              k (r'',c'') v
 
 mapMatrixlet :: (U.Unbox a, U.Unbox b) => (a -> b) -> Matrixlet a -> Matrixlet b
 mapMatrixlet f (Matrixlet sz a) = Matrixlet sz (fmap (fmap (mapArraylet f)) a)
