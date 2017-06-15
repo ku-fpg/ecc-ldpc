@@ -132,14 +132,12 @@ imapMatrixlet k (Matrixlet sz a) = Matrixlet sz $ matrix (nrows a) (ncols a) k'
   where
       k' :: (Int, Int) -> Maybe (Arraylet b)
       k' (r,c) =
-        case a ! (r,c) of
-          Nothing -> Nothing
-          Just arr ->
-            Just $ flip (imapArraylet sz) arr $ \ (r',c') v ->
-              let r'' = (r-1) * sz + r'
-                  c'' = (c-1) * sz + c'
-              in
-              k (r'',c'') v
+        fmap (imapArraylet sz $ \ (r',c') v ->
+                  let r'' = (r-1) * sz + r'
+                      c'' = (c-1) * sz + c'
+                  in
+                  k (r'',c'') v)
+             (a ! (r, c))
 
 mapMatrixlet :: (U.Unbox a, U.Unbox b) => (a -> b) -> Matrixlet a -> Matrixlet b
 mapMatrixlet f (Matrixlet sz a) = Matrixlet sz (fmap (fmap (mapArraylet f)) a)
@@ -231,14 +229,19 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
         ans = foldColsMatrixlet (/=) $ matrixMatrixlet mLet $ \ (r,c) -> hard (lam U.! c)
 
         ne_tanh'mat :: Matrixlet Double
-        ne_tanh'mat = flip imapMatrixlet ne $ \ (m,n) v -> tanh (- ((lam U.! n - v) / 2))
+        ne_tanh'mat =
+          imapMatrixlet
+            (\ (m,n) v -> tanh (- ((lam U.! n - v) / 2)))
+            ne
 
         ne_tanhMulted :: V.Vector StableDiv
         ne_tanhMulted = foldColsMatrixlet' (\_ v -> lit v) (<>) ne_tanh'mat
 
         ne' :: Matrixlet Double
-        ne' = flip imapMatrixlet ne_tanh'mat $
-                \ (m,n) v -> -2 * atanh' ((ne_tanhMulted V.! m) `sdiv` v)
+        ne' =
+          imapMatrixlet
+            (\ (m,n) v -> -2 * atanh' ((ne_tanhMulted V.! m) `sdiv` v))
+            ne_tanh'mat
 
         lam' :: V Double
         lam' = U.zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
