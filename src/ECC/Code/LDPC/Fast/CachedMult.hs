@@ -246,8 +246,3 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
         lam' :: V Double
         lam' = U.zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
 
-        unsafeLookup :: Int -> [(Int, a)] -> a
-        unsafeLookup i assocs =
-          let Just v = lookup i assocs
-          in v
-
