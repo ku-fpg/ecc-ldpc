@@ -127,8 +127,8 @@ matrixMatrixlet (Matrixlet sz a) k = Matrixlet sz $ matrix (nrows a) (ncols a) k
                    Just (Arraylet off _) -> Just $ arrayArraylet sz off $ \ (r',c') -> k ((r-1) * sz + r',(c-1) * sz + c')
 
 -- | Indexed map over matrixlets (based on 'matrixMatrixlet')
-imapMatrixlet :: forall a b . (U.Unbox a, U.Unbox b) => Matrixlet a -> ((Int,Int) -> a -> b) -> Matrixlet b
-imapMatrixlet (Matrixlet sz a) k = Matrixlet sz $ matrix (nrows a) (ncols a) k'
+imapMatrixlet :: forall a b . (U.Unbox a, U.Unbox b) => ((Int,Int) -> a -> b) -> Matrixlet a -> Matrixlet b
+imapMatrixlet k (Matrixlet sz a) = Matrixlet sz $ matrix (nrows a) (ncols a) k'
   where
       k' :: (Int, Int) -> Maybe (Arraylet b)
       k' (r,c) =
@@ -230,22 +230,15 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
         ans :: V Bool
         ans = foldColsMatrixlet (/=) $ matrixMatrixlet mLet $ \ (r,c) -> hard (lam U.! c)
 
-        -- ne_tanh :: V.Vector [(Int,Double)]
-        -- ne_tanh = foldColsMatrixlet' (\ (m,n) v -> [(n, tanh (- ((lam U.! n - v) / 2)))]) (++) ne
-
         ne_tanh'mat :: Matrixlet Double
-        ne_tanh'mat = matrixMatrixlet ne $ \ (m,n) -> tanh (- ((lam U.! n - lookupMatrixlet' ne (m,n)) / 2))
+        ne_tanh'mat = flip imapMatrixlet ne $ \ (m,n) v -> tanh (- ((lam U.! n - v) / 2))
 
-        -- ne_tanhMulted :: V.Vector StableDiv
-        -- ne_tanhMulted = mapMatrixlet (foldl' (\acc v -> acc <> lit v) (lit 1)) ne_tanh'mat
         ne_tanhMulted :: V.Vector StableDiv
         ne_tanhMulted = foldColsMatrixlet' (\_ v -> lit v) (<>) ne_tanh'mat
 
         ne' :: Matrixlet Double
-        ne' = matrixMatrixlet ne $
-                \ (m,n) -> -2 * atanh' ((ne_tanhMulted V.! m) `sdiv` lookupMatrixlet' ne_tanh'mat (m,n))
-                --((ne_tanh'mat V.! m) V.! n))
-        -- ne' = matrixMatrixlet ne $ \ (m,n) -> -2 * atanh' (product [ v | (j,v) <- ne_tanh V.! m, j /= n ])
+        ne' = flip imapMatrixlet ne_tanh'mat $
+                \ (m,n) v -> -2 * atanh' ((ne_tanhMulted V.! m) `sdiv` v)
 
         lam' :: V Double
         lam' = U.zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
@@ -254,11 +247,4 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
         unsafeLookup i assocs =
           let Just v = lookup i assocs
           in v
-
-        -- NOTE: The calls to lookupMatrixlet are currently the slow part
-        lookupMatrixlet' :: (U.Unbox a, Num a) => Matrixlet a -> (Int,Int) -> a
-        lookupMatrixlet' m i =
-          case lookupMatrixlet m i of
-            Just v -> v
-            _      -> 0
 
