@@ -103,6 +103,12 @@ foldColsArraylet' :: U.Unbox a => ((Int,Int) -> a -> b) -> Arraylet a -> V.Vecto
 foldColsArraylet' k (Arraylet off m) = V.generate sz $ \ ix -> k (ix,(ix + off) `mod` sz) (m U.! ix)
   where !sz = U.length m
 
+foldColsArrayletU :: (U.Unbox a, U.Unbox b) => ((Int,Int) -> a -> b) -> Arraylet a -> U.Vector b
+foldColsArrayletU k (Arraylet off m) =
+  U.imap (\ ix v -> k (ix, (ix + off) ` mod` sz) v)
+         m
+  where !sz = U.length m
+
 --indexByRow :: Arraylet a -> Int -> a
 --indexByRow (Arraylet a _) = undefined
 
@@ -161,6 +167,11 @@ foldColsMatrixlet' f g (Matrixlet sz a) = V.concat
     | r <- [1..nrows a]
     ]
 
+foldColsMatrixletU :: (U.Unbox a, U.Unbox b) => ((Int,Int) -> a -> b) -> (b -> b -> b) -> Matrixlet a -> U.Vector b
+foldColsMatrixletU f g (Matrixlet sz a) = U.concat
+    [ foldr1 (U.zipWith g) [ foldColsArrayletU (\ (r',c') a -> f ((r-1) * sz + r',(c-1) * sz + c') a) x | c <- [1..ncols a], Just x <- [a ! (r,c)]]
+    | r <- [1..nrows a]
+    ]
 foldRowsMatrixlet :: U.Unbox a => (a -> a -> a) -> Matrixlet a -> U.Vector a
 foldRowsMatrixlet f (Matrixlet n a) = U.concat
     [ foldr1 (U.zipWith f) [ foldRowsArraylet x | r <- [1..nrows a], Just x <- [a ! (r,c)]]
@@ -240,13 +251,13 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
             (\ (m,n) v -> tanh (- ((lam U.! n - v) / 2)))
             ne
 
-        ne_tanhMulted :: V.Vector StableDiv
-        ne_tanhMulted = foldColsMatrixlet' (\_ v -> lit v) smult ne_tanh'mat
+        ne_tanhMulted :: U.Vector StableDiv
+        ne_tanhMulted = foldColsMatrixletU (\_ v -> lit v) smult ne_tanh'mat
 
         ne' :: Matrixlet Double
         ne' =
           imapMatrixlet
-            (\ (m,n) v -> -2 * atanh' ((ne_tanhMulted V.! m) `sdiv` v))
+            (\ (m,n) v -> -2 * atanh' ((ne_tanhMulted U.! m) `sdiv` v))
             ne_tanh'mat
 
         lam' :: V Double
