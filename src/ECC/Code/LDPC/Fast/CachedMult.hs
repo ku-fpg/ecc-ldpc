@@ -22,30 +22,36 @@ import Data.Semigroup
 import Data.Foldable (foldl')
 
 
-data StableDiv
-  = StableDiv
-       !Double -- | The "worst" value for division: the closest to zero
-       !Double -- | The result of the multiplications,
-               --   excluding the "worst" value
+type StableDiv
+  = (,)
+       Double -- | The "worst" value for division: the closest to zero
+       Double -- | The result of the multiplications,
+              --   excluding the "worst" value
 
 absMinMax :: Double -> Double -> (Double, Double)
 absMinMax x y
   | abs x < abs y = (x, y)
   | otherwise     = (y, x)
 
-instance Semigroup StableDiv where
-  StableDiv a b <> StableDiv c d =
-    StableDiv minOfMins (b * maxOfMins * d)
-    where
-      (minOfMins, maxOfMins) = absMinMax a c
+-- instance Semigroup StableDiv where
+--   StableDiv a b <> StableDiv c d =
+--     StableDiv minOfMins (b * maxOfMins * d)
+--     where
+--       (minOfMins, maxOfMins) = absMinMax a c
 
 lit :: Double -> StableDiv
 lit x
-  | x >= 1    = StableDiv 1 x
-  | otherwise = StableDiv x 1
+  | x >= 1    = (1, x)
+  | otherwise = (x, 1)
+
+smult :: StableDiv -> StableDiv -> StableDiv
+smult (a, b) (c, d) =
+    (minOfMins, (b * maxOfMins * d))
+    where
+      (minOfMins, maxOfMins) = absMinMax a c
 
 sdiv :: StableDiv -> Double -> Double
-sdiv (StableDiv a b) c
+sdiv (a, b) c
   | a == c    = b
   | otherwise = a * (b/c)
 
@@ -235,7 +241,7 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
             ne
 
         ne_tanhMulted :: V.Vector StableDiv
-        ne_tanhMulted = foldColsMatrixlet' (\_ v -> lit v) (<>) ne_tanh'mat
+        ne_tanhMulted = foldColsMatrixlet' (\_ v -> lit v) smult ne_tanh'mat
 
         ne' :: Matrixlet Double
         ne' =
