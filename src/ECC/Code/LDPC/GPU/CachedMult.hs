@@ -6,7 +6,7 @@ module ECC.Code.LDPC.GPU.CachedMult where
 -- Uses the StableDiv data structure to cache multiplications.
 -- Uses Accelerate to run on the GPU
 
-import Prelude hiding ((==), (/=), (>=), (<), (>), all, map, (||), (&&), not, Num, snd, zipWith, (++), length, take, drop)
+import Prelude hiding ((==), (/=), (>=), (<), (>), all, map, (||), (&&), not, Num, snd, zipWith, (++), length, take, drop, RealFloat, Eq, Fractional, Floating)
 import qualified Prelude as P
 
 import ECC.Code.LDPC.Utils
@@ -208,6 +208,14 @@ toAcc sh = lift . fromVectors sh . U.convert
 hard' :: Exp Double -> Exp Bool
 hard' = (> 0)
 
+
+{-# INLINE atanh'' #-}
+atanh'' :: (RealFloat a, Eq a, Fractional a, Floating a) => Exp a -> Exp a
+atanh'' x =
+  cond (x == 1 || x == -1)
+       (signum x * 18.714973875118524)
+       (atanh x)
+
 ldpc :: Acc (Matrixlet Double) -> Int -> Acc (V Double) -> Acc (V Bool)
 ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} map hard' $ loop 0 mLet orig_lam
   where
@@ -254,7 +262,7 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} map hard' $ loop 0 mLet
         ne' :: Acc (Matrixlet Double)
         ne' =
           imapMatrixlet
-            (\ (m,n) v -> -2 * atanh' ((ne_tanhMulted ! (lift (Z :. m))) `sdiv` v))
+            (\ (m,n) v -> -2 * atanh'' ((ne_tanhMulted ! (lift (Z :. m))) `sdiv` v))
             ne_tanh'mat
 
         lam' :: Acc (V Double)
