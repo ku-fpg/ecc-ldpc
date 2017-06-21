@@ -58,7 +58,7 @@ library
                 accelerate-llvm-ptx >=  1.0.0.1 && < 1.2.0.0,
                 accelerate-io   >= 1.0.0.0
   hs-source-dirs:      src
-  Ghc-options: -O4 -threaded -auto-all
+  Ghc-options: -O4 -threaded -auto-all -debug
 
 executable ecc-ldpc
   build-depends:
@@ -80,7 +80,7 @@ executable ecc-ldpc
                 accelerate-io   >= 1.0.0.0
   Main-is: Main.hs
   hs-source-dirs: src, main
-  Ghc-options: -O4 -threaded -auto-all
+  Ghc-options: -O4 -threaded -auto-all -debug
 
 -- cabal configure --enable-executable-profiling 
 

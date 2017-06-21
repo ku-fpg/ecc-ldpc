@@ -6,7 +6,7 @@ module ECC.Code.LDPC.GPU.CachedMult where
 -- Uses the StableDiv data structure to cache multiplications.
 -- Uses Accelerate to run on the GPU
 
-import Prelude hiding ((==), (/=), (>=), (<), (>), all, map, (||), (&&), not, Num, snd)
+import Prelude hiding ((==), (/=), (>=), (<), (>), all, map, (||), (&&), not, Num, snd, zipWith, (++), length, take, drop)
 import qualified Prelude as P
 
 import ECC.Code.LDPC.Utils
@@ -42,9 +42,9 @@ decoder a rate maxIterations orig_lam =
 
 
 type StableDiv
-  = Exp ((,)
-           Double  -- | The "worst" value for division: the closest to zero
-           Double) -- | The result of the multiplications,
+  = ((,)
+       Double  -- | The "worst" value for division: the closest to zero
+       Double) -- | The result of the multiplications,
                    --   excluding the "worst" value
 
 absMinMax :: Exp Double -> Exp Double -> Exp (Double, Double)
@@ -53,13 +53,13 @@ absMinMax x y =
        (lift (x, y))
        (lift (y, x))
 
-lit :: Exp Double -> StableDiv
+lit :: Exp Double -> Exp StableDiv
 lit x =
   cond (x >= 1)
        (lift (1 :: Double, x))
        (lift (x, 1 :: Double))
 
-smult :: StableDiv -> StableDiv -> StableDiv
+smult :: Exp StableDiv -> Exp StableDiv -> Exp StableDiv
 smult p q =
     lift (minOfMins, (b * maxOfMins * d))
     where
@@ -69,7 +69,7 @@ smult p q =
       (a, b) = unlift p
       (c, d) = unlift q
 
-sdiv :: StableDiv -> Exp Double -> Exp Double
+sdiv :: Exp StableDiv -> Exp Double -> Exp Double
 sdiv p c =
   cond (a == c)
        b
@@ -157,6 +157,42 @@ foldColsMatrixlet f mat = fold1 f $ fold1 f arr
     (_, _, _, arr) = unlift mat
                        :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
 
+-- TODO: Check indexing transformation
+dim3ToDim2 :: (P.Num a, P.Integral a) => a -> a -> a -> a -> a -> (a, a)
+dim3ToDim2 sz offset r c arrayletIx =
+    (r + arrayletIx, c + ((arrayletIx + offset) `mod` sz))
+
+imapMatrixlet ::  forall a b . (Elt a, Elt b) => ((Exp Int, Exp Int) -> Exp a -> Exp b) -> Acc (Matrixlet a) -> Acc (Matrixlet b)
+imapMatrixlet f t = lift (sz, indices, offsets, imap f' mat)
+  where
+    f' :: Exp DIM3 -> Exp a -> Exp b
+    f' ix = f (dim3ToDim2 (the sz) (offsets ! ix') r c arrayletIx)
+      where
+        (r, c, arrayletIx) = unlift $ unindex3 ix :: (Exp Int, Exp Int, Exp Int)
+        ix' = index2 r c :: Exp DIM2
+
+    (sz, indices, offsets, mat) = unlift t
+                                    :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
+
+mapMatrixlet ::  forall a b . (Elt a, Elt b) => (Exp a -> Exp b) -> Acc (Matrixlet a) -> Acc (Matrixlet b)
+mapMatrixlet f t = lift (sz, indices, offsets, map f mat)
+  where
+    (sz, indices, offsets, mat) = unlift t
+                                    :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
+
+foldMapColsMatrixlet
+          :: (Elt a, Elt b)
+             => (Exp a -> Exp b)
+             -> (Exp b -> Exp b -> Exp b)
+             -> Acc (Matrixlet a)
+             -> Acc (V b)
+foldMapColsMatrixlet f g t = foldColsMatrixlet g $ mapMatrixlet f t
+
+foldRowsMatrixlet :: forall a . Elt a => (Exp a -> Exp a -> Exp a) -> Acc (Matrixlet a) -> Acc (V a)
+foldRowsMatrixlet f mat = fold1 f $ transpose $ fold1 f arr
+  where
+    (_, _, _, arr) = unlift mat
+                       :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
 
 -- | Runs Accelerate computation on GPU
 fromAcc :: Acc (V Bool) -> U.Vector Bool
@@ -200,23 +236,27 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} map hard' $ loop 0 mLet
                 in hard' (lam ! lift (Z :. c))
 
     loopBody :: Acc (Scalar Int, Matrixlet Double, V Double) -> Acc (Scalar Int, Matrixlet Double, V Double)
-    loopBody  = undefined
-      -- where
-      --   ne_tanh'mat :: Matrixlet Double
-      --   ne_tanh'mat =
-      --     imapMatrixlet
-      --       (\ (m,n) v -> tanh (- ((lam U.! n - v) / 2)))
-      --       ne
+    loopBody t = lift (unit (n + 1) :: Acc (Scalar Int), ne', lam')
+      where
+        (!n0, ne, lam) = unlift t :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
 
-      --   ne_tanhMulted :: V StableDiv
-      --   ne_tanhMulted = foldColsMatrixletU (\_ v -> lit v) smult ne_tanh'mat
+        n = the n0 :: Exp Int
 
-      --   ne' :: Matrixlet Double
-      --   ne' =
-      --     imapMatrixlet
-      --       (\ (m,n) v -> -2 * atanh' ((ne_tanhMulted U.! m) `sdiv` v))
-      --       ne_tanh'mat
+        ne_tanh'mat :: Acc (Matrixlet Double)
+        ne_tanh'mat =
+          imapMatrixlet
+            (\ (m,n) v -> tanh (- ((lam ! (lift (Z :. n)) - v) / 2)))
+            ne
 
-      --   lam' :: V Double
-      --   lam' = U.zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
+        ne_tanhMulted :: Acc (V StableDiv)
+        ne_tanhMulted = foldMapColsMatrixlet (\v -> lit v) smult ne_tanh'mat
+
+        ne' :: Acc (Matrixlet Double)
+        ne' =
+          imapMatrixlet
+            (\ (m,n) v -> -2 * atanh' ((ne_tanhMulted ! (lift (Z :. m))) `sdiv` v))
+            ne_tanh'mat
+
+        lam' :: Acc (V Double)
+        lam' = zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
 
