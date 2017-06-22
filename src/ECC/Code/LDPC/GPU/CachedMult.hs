@@ -191,12 +191,13 @@ foldMapColsMatrixlet f g t = foldColsMatrixlet g $ mapMatrixlet f t
 foldRowsMatrixlet :: forall a . Elt a => (Exp a -> Exp a -> Exp a) -> Acc (Matrixlet a) -> Acc (V a)
 foldRowsMatrixlet f mat = fold1 f $ transpose $ fold1 f arr
   where
-    (_, _, _, arr) = unlift mat
-                       :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
+    (_, _, _, arr) =
+      unlift mat
+        :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
 
 -- | Runs Accelerate computation on GPU
 fromAcc :: Acc (V Bool) -> U.Vector Bool
-fromAcc = U.map word8ToBool . U.convert . toVectors . run
+fromAcc = U.map word8ToBool . U.convert . toVectors . run . traceShowId
   where
     word8ToBool 0 = False
     word8ToBool 1 = True
@@ -226,7 +227,7 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} map hard' $ loop 0 mLet
       in
       acond (the finalN >= lift maxIterations)
             (lift orig_lam)
-            (lift lam)
+            (lift r)
       where
         liftedInit :: Acc (Scalar Int, Matrixlet Double, V Double)
         liftedInit = lift (unit (lift n), ne, lam)
@@ -257,12 +258,12 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} map hard' $ loop 0 mLet
             ne
 
         ne_tanhMulted :: Acc (V StableDiv)
-        ne_tanhMulted = foldMapColsMatrixlet (\v -> lit v) smult ne_tanh'mat
+        ne_tanhMulted = foldMapColsMatrixlet lit smult ne_tanh'mat
 
         ne' :: Acc (Matrixlet Double)
         ne' =
           imapMatrixlet
-            (\ (m,n) v -> -2 * atanh'' ((ne_tanhMulted ! (lift (Z :. m))) `sdiv` v))
+            (\ (m,n) v -> -2 * atanh'' (ne_tanhMulted ! (lift (Z :. m)) `sdiv` v))
             ne_tanh'mat
 
         lam' :: Acc (V Double)
