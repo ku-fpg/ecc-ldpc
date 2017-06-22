@@ -197,7 +197,7 @@ foldRowsMatrixlet f mat = fold1 f $ transpose $ fold1 f arr
 
 -- | Runs Accelerate computation on GPU
 fromAcc :: Acc (V Bool) -> U.Vector Bool
-fromAcc = U.map word8ToBool . U.convert . toVectors . run . traceShowId
+fromAcc = U.map word8ToBool . U.convert . toVectors . run
   where
     word8ToBool 0 = False
     word8ToBool 1 = True
