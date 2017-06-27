@@ -116,7 +116,7 @@ foldColsArrayletU k (Arraylet off m) =
 data Matrixlet a = Matrixlet Int (Matrix (Maybe (Arraylet a)))
  deriving Show
 
-initMatrixlet :: forall a . U.Unbox a => a -> Q.QuasiCyclic Integer -> Matrixlet a
+initMatrixlet :: forall a . (Show a, U.Unbox a) => a -> Q.QuasiCyclic Integer -> Matrixlet a
 initMatrixlet zero (Q.QuasiCyclic sz m) = Matrixlet sz (fmap f m)
     where f :: Integer -> Maybe (Arraylet a)
           f 0 = Nothing

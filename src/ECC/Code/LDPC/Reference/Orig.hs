@@ -48,6 +48,13 @@ toBits = fmap toBit
 fromBits :: M Bit -> M Bool
 fromBits = fmap fromBit
 
+-- {-# INLINE atanh'' #-}
+-- atanh'' :: (RealFloat a, Eq a, Fractional a, Floating a) => a -> a
+-- atanh'' x =
+--   if (x == 1 || x == -1)
+--   then (signum x * 18.714973875118524)
+--   else (atanh x)
+
 ldpc :: M Bool -> Int -> V Double -> V Bool
 ldpc a0 maxIterations orig_lam = U.map hard $ loop 0 orig_ne orig_lam
   where
