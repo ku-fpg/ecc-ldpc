@@ -22,10 +22,9 @@ import Debug.Trace
 
 import qualified ECC.Code.LDPC.Fast.Encoder as E
 
-import Data.Semigroup
 import Data.Foldable (foldl')
 
-import Data.Array.Accelerate
+import Data.Array.Accelerate as A
 import Data.Array.Accelerate.IO
 import Data.Array.Accelerate.LLVM.PTX
 
@@ -84,6 +83,9 @@ type Arraylet a =
   (,)
     (Scalar Int)
     (V a)
+
+mkArraylet :: Elt a => Acc (Scalar Int) -> Acc (V a) -> Acc (Arraylet a)
+mkArraylet sz v = lift (sz, v)
 
 arrayArraylet :: Acc (Scalar Int) -> Exp Int -> Exp Int -> (Exp DIM2 -> Exp b) -> Exp b
 arrayArraylet sz0 off arrayletIx k =
@@ -189,11 +191,27 @@ foldMapColsMatrixlet
 foldMapColsMatrixlet f g t = foldColsMatrixlet g $ mapMatrixlet f t
 
 foldRowsMatrixlet :: forall a . Elt a => (Exp a -> Exp a -> Exp a) -> Acc (Matrixlet a) -> Acc (V a)
-foldRowsMatrixlet f mat = fold1 f $ transpose $ fold1 f arr
+foldRowsMatrixlet f mat =
+  generate (lift (Z :. mletColCount*the sz)) $ \ix ->
+    let c = unindex1 $ unlift ix
+        (cd, -- Block column
+         cr  -- Column inside block
+         )    = c `divMod` the sz
+    in
+    A.snd $
+    while ((< mletRowCount) . A.fst)
+          (\p ->
+            let (r, v) = unlift p :: (Exp Int, Exp a)
+                x      = m ! lift (Z :. r :. cd :. cr)
+            in
+            lift (r+1, f x v)
+          )
+          (lift (1::Int, m ! lift (Z :. (0 :: Int) :. cd :. cr)))
   where
-    (_, _, _, arr) =
-      unlift mat
+    (sz, indices, _, m)  = unlift mat
         :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
+    (mletRowCount, mletColCount, arrayletSize) = unlift $ unindex3 (shape m) :: (Exp Int, Exp Int, Exp Int)
+    colCount = arrayletSize * mletColCount
 
 -- | Runs Accelerate computation on GPU
 fromAcc :: Acc (V Bool) -> U.Vector Bool
