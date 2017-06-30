@@ -144,15 +144,15 @@ initMatrixlet zero (Q.QuasiCyclic sz qm) =
     arraylets :: Acc (M a)
     arraylets =
       fill (lift (Z
-                  :. (M.nrows qm `quot` sz)
-                  :. (M.ncols qm `quot` sz)-zeroArrayletCount))
+                  :. sz
+                  :. (M.nrows qm*M.ncols qm)-zeroArrayletCount))
            (lift zero)
 
     -- Offset vector
     offsets :: Acc (V Int)
     offsets =
       use $
-      fromList (Z :. (M.ncols qm `quot` sz)-zeroArrayletCount) $
+      fromList (Z :. (M.nrows qm*M.ncols qm)-zeroArrayletCount) $
       foldMap (\n ->
         case n of
           0 -> []
