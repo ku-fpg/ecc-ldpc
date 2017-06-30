@@ -109,12 +109,7 @@ type Matrixlet a =
     (M Int)   -- | Offsets of arraylets
     (Array DIM3 a)
 
-type Matrixlet2D a =
-  (,,,)
-    (Scalar Int)
-    (M Bool)  -- | (Block) Indices with non-zero blocks
-    (M Int)   -- | Offsets of arraylets
-    (Array DIM2 a)
+type Matrixlet2D a = Array DIM2 a
 
 -- TODO: See if this can be made more efficient (currently traverses matrix
 -- multiple times).
@@ -242,7 +237,7 @@ foldRowsMatrixlet f mat =
 -- dim3ToDim2 sz offset r c arrayletIx =
 --     ((sz*r) + arrayletIx, (sz*c) + ((arrayletIx + offset) `mod` sz))
 
-imapMatrixlet ::  forall a b . (Elt a, Elt b) => ((Exp Int, Exp Int) -> Exp a -> Exp b) -> Acc (Matrixlet a) -> Acc (Matrixlet b)
+imapMatrixlet :: forall a b . (Elt a, Elt b) => ((Exp Int, Exp Int) -> Exp a -> Exp b) -> Acc (Matrixlet a) -> Acc (Matrixlet b)
 imapMatrixlet f t = lift (sz, indices, offsets, imap f' mat)
   where
     arrayletIxTransform :: Exp Int -> Exp Int -> ((Exp Int, Exp Int) -> r) -> r
@@ -327,7 +322,7 @@ transposeMatrixlet p =
       in
       lift (Z :. c :. r :. ix')
 
-    (sz, indices, offsets, m)  = unlift p
+    (sz, indices, offsets, m) = unlift p
         :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
 
 foldColsMatrixlet' :: forall a . (Elt a) => (Exp a -> Exp a -> Exp a) -> Acc (Matrixlet a) -> Acc (V a)
@@ -338,17 +333,48 @@ foldColsMatrixlet' f mLet = fold1 f m2D
 foldRowsMatrixlet' :: forall a . (Elt a) => (Exp a -> Exp a -> Exp a) -> Acc (Matrixlet a) -> Acc (V a)
 foldRowsMatrixlet' f mLet = fold1 f $ transpose m2D
   where
+    (sz, indices, offsets, m) = unlift mLet
+        :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
     m2D = to2DArray mLet
 
+foldRowsMatrixlet'' :: forall a . (Elt a) => (Exp a -> Exp a -> Exp a) -> Exp a -> Acc (Matrixlet a) -> Acc (V a)
+foldRowsMatrixlet'' f z mLet =
+  permute f (fill (lift (Z :. colCount)) z) reindex m
+  where
+    reindex :: Exp DIM3 -> Exp DIM1
+    reindex p = index1 ((i*the sz) + k)
+      where
+        (i, j, k) = unlift $ unindex3 p :: (Exp Int, Exp Int, Exp Int)
+
+    (sz, indices, offsets, m) = unlift (transposeMatrixlet mLet)
+        :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
+    (colCount, rowCount, _) = unlift . unindex3 $ shape m :: (Exp Int, Exp Int, Exp Int)
+
+imapMatrixlet' :: forall a b . (Elt a, Elt b) => ((Exp Int, Exp Int) -> Exp a -> Exp b) -> Acc (Matrixlet a) -> Acc (Matrixlet b)
+imapMatrixlet' f mLet =
+  overMatrixlet mLet (\m ->
+    lift (imap (\p -> f' p . A.snd) m))
+  where
+    f' :: Exp DIM2 -> Exp a -> Exp b
+    f' p x =
+      let (r, c) = unlift $ unindex2 p :: (Exp Int, Exp Int)
+      in
+      f (r, c) x
+
+    m2D = to2DArray mLet
+    (sz, indices, offsets, _) = unlift mLet
+        :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
+
+
 -- TODO: Verify that these transformations are correct.
-from2D :: Exp Int -> Exp Int ->  Exp Int -> Exp DIM2 -> Exp DIM3
-from2D sz mLetRowCount mLetColCount p =
+from2D :: Exp Int -> Exp DIM2 -> Exp DIM3
+from2D sz p =
   let (r, c) = unlift $ unindex2 p :: (Exp Int, Exp Int)
   in
   lift
     (Z
-    :. (r `div` mLetRowCount)
-    :. (c `div` mLetColCount)
+    :. (r `div` sz)
+    :. (c `div` sz)
     :. (r `mod` sz)
     )
 
@@ -364,7 +390,7 @@ to2D sz p =
     )
 to2DArray :: forall a . Elt a => Acc (Matrixlet a) -> Acc (Array DIM2 a)
 to2DArray mLet =
-  backpermute shape2D (from2D (the sz) mLetRowCount mLetColCount) m
+  backpermute shape2D (from2D (the sz)) m
   where
     (sz, indices, offsets, m) = unlift mLet
         :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 a))
@@ -374,13 +400,13 @@ to2DArray mLet =
       lift (Z :. mLetRowCount*the sz :. mLetColCount*the sz)
         :: Exp DIM2
 -- | Abstracts of internal 3D index representation
-overMatrixlet :: forall a . (Elt a) =>
-  Acc (Matrixlet a) -> (Acc (Matrixlet2D (DIM2, a)) -> Acc (Matrixlet2D a)) -> Acc (Matrixlet a)
+overMatrixlet :: forall a b . (Elt a, Elt b) =>
+  Acc (Matrixlet a) -> (Acc (Matrixlet2D (DIM2, a)) -> Acc (Matrixlet2D b)) -> Acc (Matrixlet b)
 overMatrixlet mLet f =
     lift
-      (sz'
-      ,indices'
-      ,offsets'
+      (sz
+      ,indices
+      ,offsets
       ,backpermute (shape m) (to2D (the sz)) m'
       )
   where
@@ -407,52 +433,44 @@ overMatrixlet mLet f =
       lift (Z :. mLetRowCount*the sz :. mLetColCount*the sz)
         :: Exp DIM2
 
-    (sz', indices', offsets', m') = unlift $
-      f (
-        lift
-          (sz
-          ,indices
-          ,offsets
-          ,backpermute shape2D (from2D (the sz) mLetRowCount mLetColCount) (A.map dropDim' (indexed m))
-          ) :: Acc (Matrixlet2D (DIM2, a))
-        ) :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM2 a))
+    m' =
+      f (backpermute shape2D (from2D (the sz)) (A.map dropDim' (indexed m))
+          :: Acc (Matrixlet2D (DIM2, a)))
 
 ldpc :: Acc (Matrixlet Double) -> Int -> Acc (V Double) -> Acc (V Bool)
 ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} map hard' $ loop 0 mLet orig_lam
   where
     loop :: Int -> Acc (Matrixlet Double) -> Acc (V Double) -> Acc (V Double)
     loop !n ne lam =
-      let (finalN, _, r) = unlift (awhile loopCond loopBody liftedInit)
+      let (finalN, ne, r) = unlift (awhile loopCond loopBody liftedInit)
                             :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
       in
       acond (the finalN >= lift maxIterations)
-            (error "out of iterations") --(lift r)--(lift orig_lam)
-            (acond (the . A.and $ A.zipWith (==) r orig_lam)
-                   (error "r == orig_lam")
-                   (lift r))
+            (lift orig_lam) --(lift r)--(lift orig_lam)
+            (lift r)
       where
         liftedInit :: Acc (Scalar Int, Matrixlet Double, V Double)
         liftedInit = lift (unit (lift n), ne, lam)
 
     loopCond :: Acc (Scalar Int, Matrixlet Double, V Double) -> Acc (Scalar Bool)
-    loopCond t = unit $ (n < lift maxIterations) && not (the (A.all (== lift False) ans))
+    loopCond t = unit $ (n < lift maxIterations) && not (the (A.any (== lift False) ans))
       where
         (!n0, ne, lam) = unlift t :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
         n              = the n0
 
         ans :: Acc (V Bool)
         ans =
-          -- A.map A.even $
-          -- foldColsMatrixlet (+) $
-          -- imapMatrixlet (\ (r, c) v ->
-          --   cond (c_hat !! c && v /= 0)
-          --        1
-          --        0 :: Exp Int) $
-          -- mLet
-
-          foldColsMatrixlet' (/=) $
-          imapMatrixlet (\ (r, c) _ -> c_hat !! c) $
+          A.map A.even $
+          foldColsMatrixlet' (+) $
+          imapMatrixlet' (\ (r, c) v ->
+            cond (c_hat !! c && v /= 0)
+                 1
+                 0 :: Exp Int) $
           mLet
+
+          -- foldColsMatrixlet (/=) $
+          -- imapMatrixlet' (\ (r, c) _ -> c_hat !! r) $
+          -- mLet
 
         c_hat :: Acc (V Bool)
         c_hat = map hard' lam
@@ -466,7 +484,7 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} map hard' $ loop 0 mLet
 
         ne_tanh'mat :: Acc (Matrixlet Double)
         ne_tanh'mat =
-          imapMatrixlet
+          imapMatrixlet'
             (\ (m,n) v -> tanh (- ((lam ! (lift (Z :. n)) - v) / 2)))
             ne
 
@@ -475,10 +493,10 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} map hard' $ loop 0 mLet
 
         ne' :: Acc (Matrixlet Double)
         ne' =
-          imapMatrixlet
+          imapMatrixlet'
             (\ (m,n) v -> -2 * atanh'' (ne_tanhMulted ! (lift (Z :. m)) `sdiv` v))
             ne_tanh'mat
 
         lam' :: Acc (V Double)
-        lam' = zipWith (+) orig_lam $ foldRowsMatrixlet' (+) ne'
+        lam' = zipWith (+) orig_lam $ foldRowsMatrixlet'' (+) 0 ne'
 
