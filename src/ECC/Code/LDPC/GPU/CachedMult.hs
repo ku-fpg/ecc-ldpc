@@ -141,8 +141,11 @@ initMatrixlet zero (Q.QuasiCyclic sz qm) =
 
     blockCoords :: Acc (V DIM2)
     blockCoords =
-      flatten $
-      imap (\ix _ -> ix) nonzeroBlocks
+      A.map A.fst $
+      A.afst $
+      A.filter A.snd $
+      indexed $
+      nonzeroBlocks
 
     -- Arraylet matrix (initially all 'zero's)
     arraylets :: Acc (M a)
