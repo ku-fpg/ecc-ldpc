@@ -17,6 +17,7 @@ import qualified Data.Matrix as M
 import Data.Bit
 import Data.Bits
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Storable as S
 import qualified Data.Matrix.QuasiCyclic as Q
 import Debug.Trace
 
@@ -30,7 +31,7 @@ import Data.Array.Accelerate.LLVM.PTX
 
 import Control.Monad.State hiding (lift)
 import Data.Traversable (for)
-import Data.Monoid
+import Data.Monoid hiding (All, Any)
 
 code :: Code
 code = mkLDPC_Code "gpu-arraylet-cm" E.encoder decoder
@@ -44,10 +45,15 @@ decoder a rate maxIterations orig_lam =
 -- | Runs Accelerate computation on GPU
 fromAcc :: Acc (V Bool) -> U.Vector Bool
 fromAcc = U.map word8ToBool . U.convert . toVectors . run
-  where
-    word8ToBool 0 = False
-    word8ToBool 1 = True
-    word8ToBool n = error $ "word8ToBool: Got binary argument '" P.++ show n P.++ "'"
+
+word8ToBool :: Word8 -> Bool
+word8ToBool 0 = False
+word8ToBool 1 = True
+word8ToBool n = error $ "word8ToBool: Got binary argument '" P.++ show n P.++ "'"
+
+boolToWord8 :: Bool -> Word8
+boolToWord8 False = 0
+boolToWord8 True  = 1
 
 toAcc :: DIM1 -> U.Vector Double -> Acc (V Double)
 toAcc sh = lift . fromVectors sh . U.convert
@@ -112,33 +118,31 @@ type Arraylet  a =
     (V a)
 
 type Matrixlet a =
-  (,,,)
-    (Scalar Int) -- | Arraylet size
-    (M Int)      -- | Arraylet indices (given as column numbers)
-    (V Int)      -- | Arraylet offsets
-    (M a)        -- | Arraylets (one arraylet per column)
-
-
+  (,,,,)
+    (Scalar Int)  -- | Arraylet size
+    (Scalar DIM2) -- | "Actual" matrix size
+    (V DIM2)      -- | Arraylet block coordinates
+    (V Int)       -- | Arraylet offsets
+    (M a)         -- | Arraylets (one arraylet per column)
 
 initMatrixlet :: forall a. (U.Unbox a, Elt a, a ~ Plain a, Lift Exp a) =>
   a -> Q.QuasiCyclic Integer -> Acc (Matrixlet a)
 initMatrixlet zero (Q.QuasiCyclic sz qm) =
-    lift (unit (lift sz), accIndices, offsets, arraylets)
+    lift (unit (lift sz), dim, blockCoords, offsets, arraylets)
   where
-    indices :: M.Matrix Int
-    indices =
-      flip evalState 0 $
-      for qm $ \n ->
-        case n of
-          0 -> pure 0
-          _ -> modify (+1) *> get
+    dim = unit $ lift (Z :. M.nrows qm*sz :. M.ncols qm*sz)
 
-    accIndices :: Acc (M Int)
-    accIndices =
-      use $
-      fromVectors (Z :. M.nrows qm :. M.ncols qm) $
-      U.convert $
-      M.getMatrixAsVector indices
+    nonzeroBlocks :: Acc (M Bool)
+    nonzeroBlocks =
+      use
+        (fromVectors (Z :. M.nrows qm :. M.ncols qm)
+                     (S.map boolToWord8
+                       (U.convert (M.getMatrixAsVector (fmap (P./= 0) qm)))))
+
+    blockCoords :: Acc (V DIM2)
+    blockCoords =
+      flatten $
+      imap (\ix _ -> ix) nonzeroBlocks
 
     -- Arraylet matrix (initially all 'zero's)
     arraylets :: Acc (M a)
@@ -165,7 +169,7 @@ initMatrixlet zero (Q.QuasiCyclic sz qm) =
       foldMap (\n ->
         case n of
           0 -> 1
-          _ -> 0)
+          _ -> 0) $
       qm
 
     -- The number must be a power of two, because there is only one bit set.
@@ -183,68 +187,158 @@ nonzeroArrayletIx sz offset d =
   in
   c == (r + offset) `mod` sz
 
+foldRowsMatrixlet :: forall a . (Elt a, a ~ Plain a) => (Exp a -> Exp a -> Exp a) -> Exp a -> Acc (Matrixlet a) -> Acc (V a)
+foldRowsMatrixlet f z mLet =
+  permute
+    (\p q ->
+      let a = unlift p :: Exp a
+          b = unlift q :: Exp a
+      in
+      f a b)
+    (A.replicate (lift (Z :. realColCount)) (unit z))
+    (\ix ->
+      let (r0, c0)         = unlift $ unindex2 ix :: (Exp Int, Exp Int)
+          (blockR, blockC) = unlift $ unindex2 $ blockCoords !! c0 :: (Exp Int, Exp Int)
+          offset           = offsets !! c0
+      in index1 ((blockC*the sz) + ((r0 + offset) `mod` the sz))) $
+    arraylets
+  where
+    (sz, realDim, blockCoords, offsets, arraylets) = unlift mLet
+      :: (Acc (Scalar Int), Acc (Scalar DIM2), Acc (V DIM2), Acc (V Int), Acc (M a))
+
+    (_, realColCount) = unlift $ unindex2 $ the realDim :: (Exp Int, Exp Int)
+
+foldColsMatrixlet :: forall a . (Elt a, a ~ Plain a) => (Exp a -> Exp a -> Exp a) -> Exp a -> Acc (Matrixlet a) -> Acc (V a)
+foldColsMatrixlet f z mLet =
+  permute
+    (\p q ->
+      let a = unlift p :: Exp a
+          b = unlift q :: Exp a
+      in
+      f a b)
+    (A.replicate (lift (Z :. realRowCount)) (unit z))
+    (\ix ->
+      let (r0, c0)         = unlift $ unindex2 ix :: (Exp Int, Exp Int)
+          (blockR, blockC) = unlift $ unindex2 $ blockCoords !! c0 :: (Exp Int, Exp Int)
+          offset           = offsets !! c0
+      in index1 ((blockR*the sz) + r0)) $
+    arraylets
+  where
+    (sz, realDim, blockCoords, offsets, arraylets) = unlift mLet
+      :: (Acc (Scalar Int), Acc (Scalar DIM2), Acc (V DIM2), Acc (V Int), Acc (M a))
+
+    (realRowCount, _) = unlift $ unindex2 $ the realDim :: (Exp Int, Exp Int)
+
+matrixMatrixlet :: forall a b . (Elt a, Elt b) =>
+  Acc (Matrixlet a) -> ((Exp Int, Exp Int) -> Exp b) -> Acc (Matrixlet b)
+matrixMatrixlet mLet f =
+  lift
+    (sz0
+    ,realDim
+    ,blockCoords
+    ,offsets
+    ,generate (shape arraylets)
+      $ \ix ->
+          let (i, arrIx) = unlift $ unindex2 ix :: (Exp Int, Exp Int)
+              (r0, c0)   = unlift $ unindex2 (blockCoords !! arrIx) :: (Exp Int, Exp Int)
+              r          = (r0*sz) + i
+              c          = (c0*sz) + ((i + (offsets !! arrIx)) `mod` sz)
+          in
+          f (r, c)
+    )
+  where
+    (sz0, realDim, blockCoords, offsets, arraylets) = unlift mLet
+      :: (Acc (Scalar Int), Acc (Scalar DIM2), Acc (V DIM2), Acc (V Int), Acc (M a))
+
+    sz = the sz0
+
+    (realRowCount, realColCount) = unlift $ unindex2 $ the realDim :: (Exp Int, Exp Int)
+
+
+mapMatrixlet :: forall a b . (Elt a, Elt b) =>
+  (Exp a -> Exp b) -> Acc (Matrixlet a) -> Acc (Matrixlet b)
+mapMatrixlet f mLet =
+  lift
+    (sz0
+    ,realDim
+    ,blockCoords
+    ,offsets
+    ,A.map f arraylets
+    )
+  where
+    (sz0, realDim, blockCoords, offsets, arraylets) = unlift mLet
+      :: (Acc (Scalar Int), Acc (Scalar DIM2), Acc (V DIM2), Acc (V Int), Acc (M a))
+
+imapMatrixlet :: forall a b . (Elt a, Elt b) =>
+  ((Exp Int, Exp Int) -> Exp a -> Exp b) -> Acc (Matrixlet a) -> Acc (Matrixlet b)
+imapMatrixlet f mLet =
+  lift
+    (sz0
+    ,realDim
+    ,blockCoords
+    ,offsets
+    ,generate (shape arraylets)
+      $ \ix ->
+          let (i, arrIx) = unlift $ unindex2 ix :: (Exp Int, Exp Int)
+              (r0, c0)  = unlift $ unindex2 (blockCoords !! arrIx) :: (Exp Int, Exp Int)
+              r         = (r0*sz) + i
+              c         = (c0*sz) + ((i + (offsets !! arrIx)) `mod` sz)
+          in
+          f (r, c) (arraylets ! ix)
+    )
+  where
+    (sz0, realDim, blockCoords, offsets, arraylets) = unlift mLet
+      :: (Acc (Scalar Int), Acc (Scalar DIM2), Acc (V DIM2), Acc (V Int), Acc (M a))
+
+    sz = the sz0
+
+    (realRowCount, realColCount) = unlift $ unindex2 $ the realDim :: (Exp Int, Exp Int)
+
 ldpc :: Acc (Matrixlet Double) -> Int -> Acc (V Double) -> Acc (V Bool)
-ldpc = error "Not implemented"
+ldpc mLet maxIterations orig_lam =
+  map hard' $ loop 0 mLet orig_lam
+  where
+    loop :: Int -> Acc (Matrixlet Double) -> Acc (V Double) -> Acc (V Double)
+    loop n ne lam =
+      let (finalN, ne, r) = unlift (awhile loopCond loopBody liftedInit)
+                            :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
+      in
+      acond (the finalN >= lift maxIterations)
+            r --(lift orig_lam)
+            r
+      where
+        liftedInit :: Acc (Scalar Int, Matrixlet Double, V Double)
+        liftedInit = lift (unit (lift n), ne, lam)
+
+    loopCond :: Acc (Scalar Int, Matrixlet Double, V Double) -> Acc (Scalar Bool)
+    loopCond t = unit $ (the n < lift maxIterations) && not (the (A.all (== lift False) ans))
+      where
+        (n, ne, lam) = unlift t :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
+
+        ans :: Acc (V Bool)
+        ans = foldColsMatrixlet (/=) (lift False) $ matrixMatrixlet mLet $ \ (r, c) -> hard' (lam !! c)
 
 
+    loopBody :: Acc (Scalar Int, Matrixlet Double, V Double) -> Acc (Scalar Int, Matrixlet Double, V Double)
+    loopBody t = lift (unit (the n+1), ne', lam')
+      where
+        (n, ne, lam) = unlift t :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
 
+        ne_tanh'mat :: Acc (Matrixlet Double)
+        ne_tanh'mat =
+          imapMatrixlet
+            (\ (m,n) v -> tanh (- ((lam !! n - v) / 2)))
+            ne
 
--- ldpc :: Acc (Matrixlet Double) -> Int -> Acc (V Double) -> Acc (V Bool)
--- ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} map hard' $ loop 0 mLet orig_lam
---   where
---     loop :: Int -> Acc (Matrixlet Double) -> Acc (V Double) -> Acc (V Double)
---     loop !n ne lam =
---       let (finalN, ne, r) = unlift (awhile loopCond loopBody liftedInit)
---                             :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
---       in
---       acond (the finalN >= lift maxIterations)
---             (lift orig_lam) --(lift r)--(lift orig_lam)
---             (lift r)
---       where
---         liftedInit :: Acc (Scalar Int, Matrixlet Double, V Double)
---         liftedInit = lift (unit (lift n), ne, lam)
+        ne_tanhMulted :: Acc (V StableDiv)
+        ne_tanhMulted = foldColsMatrixlet smult (lit 1) $ mapMatrixlet lit ne_tanh'mat
 
---     loopCond :: Acc (Scalar Int, Matrixlet Double, V Double) -> Acc (Scalar Bool)
---     loopCond t = unit $ (n < lift maxIterations) && not (the (A.any (== lift False) ans))
---       where
---         (!n0, ne, lam) = unlift t :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
---         n              = the n0
---         (sz, indices, _, m)  = unlift ne
---             :: (Acc (Scalar Int), Acc (M Bool), Acc (M Int), Acc (Array DIM3 Double))
---         (mLetRows, mLetCols, _) = unlift $ unindex3 $ shape m
---           :: (Exp Int, Exp Int, Exp Int)
+        ne' :: Acc (Matrixlet Double)
+        ne' =
+          imapMatrixlet
+            (\ (m,n) v -> -2 * atanh'' ((ne_tanhMulted !! m) `sdiv` v))
+            ne_tanh'mat
 
---         ans :: Acc (V Bool)
---         ans = undefined
-
---         c_hat :: Acc (V Bool)
---         c_hat = map hard' lam
-
---     loopBody :: Acc (Scalar Int, Matrixlet Double, V Double) -> Acc (Scalar Int, Matrixlet Double, V Double)
---     loopBody t = lift (unit (n + 1) :: Acc (Scalar Int), ne', lam')
---       where
---         (!n0, ne, lam) = unlift t :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
-
---         n = the n0 :: Exp Int
-
---         ne_tanh'mat :: Acc (Matrixlet Double)
---         ne_tanh'mat =
---           imapMatrixlet
---             (\ (m,n) v -> tanh (- ((lam ! (lift (Z :. n)) - v) / 2)))
---             ne
-
---         ne_tanhMulted :: Acc (V StableDiv)
---         ne_tanhMulted =
---           foldColsMatrixlet' (lit 1) smult $
---           imapMatrixlet (const lit) ne_tanh'mat
-
---         ne' :: Acc (Matrixlet Double)
---         ne' =
---           imapMatrixlet
---             (\ (m,n) v ->
---               -2 * atanh'' ((ne_tanhMulted ! (lift (Z :. m))) `sdiv` v))
---             ne_tanh'mat
-
---         lam' :: Acc (V Double)
---         lam' = zipWith (+) orig_lam $ foldRowsMatrixlet (+) ne'
+        lam' :: Acc (V Double)
+        lam' = zipWith (+) orig_lam $ foldRowsMatrixlet (+) 0 ne'
 
