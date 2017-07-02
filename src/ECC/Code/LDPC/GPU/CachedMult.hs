@@ -37,17 +37,54 @@ code :: Code
 code = ldpc `seq` mkLDPC_Code "gpu-arraylet-cm" E.encoder decoder
 
 decoder :: Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool)
-decoder arr rate maxIterations orig_lam =
-  Just $ U.map word8ToBool $ U.convert $ toVectors $ ldpc (a, b, c, d, e, run $ unit $ lift maxIterations, fromVectors sh (U.convert orig_lam))
-  where (a, b, c, d, e) = run $ initMatrixlet 0 arr :: (Scalar Int, Scalar DIM2, V DIM2, V Int, M Double)
-        sh   = Z :. U.length orig_lam
+decoder arr@(Q.QuasiCyclic sz qm) rate maxIterations orig_lam =
+  Just $ U.map word8ToBool $ U.convert $ toVectors $ ldpc (run $ unit $ lift sz, run $ unit $ lift zeroArrayletCount, nonzeroBlocks, run $ unit $ lift qmSh, offsets, run $ unit $ lift maxIterations, fromVectors sh (U.convert orig_lam))
+  where
+    -- (a, b, c, d, e) = run $ initMatrixlet 0 arr :: (Scalar Int, Scalar DIM2, V DIM2, V Int, M Double)
+    sh   = Z :. U.length orig_lam
+    qmSh = Z :. M.nrows qm :. M.ncols qm
+
+    -- The number must be a power of two, because there is only one bit set.
+    g :: Integer -> Int
+    g x | x `testBit` 0 = 0
+        | x P.== 0      = error "got to zero; should never happen"
+        | otherwise     = 1 + g (x `shiftR` 1)
+
+    -- Offset vector
+    offsets :: V Int
+    offsets =
+      fromList (Z :. (M.nrows qm*M.ncols qm)-zeroArrayletCount) $
+      foldMap (\n ->
+        case n of
+          0 -> []
+          _ -> [g n]) $
+      qm
+
+    zeroArrayletCount :: Int
+    zeroArrayletCount =
+      getSum $
+      foldMap (\n ->
+        case n of
+          0 -> 1
+          _ -> 0) $
+      qm
+
+    nonzeroBlocks :: M Bool
+    nonzeroBlocks =
+      fromVectors qmSh
+        (S.map boolToWord8
+          (U.convert (M.getMatrixAsVector (fmap (P./= 0) qm))))
+
+
 
 -- | Compiled ldpc'
-ldpc :: (Scalar Int, Scalar DIM2, V DIM2, V Int, M Double, Scalar Int, V Double) -> V Bool
+ldpc :: (Scalar Int, Scalar Int, M Bool, Scalar DIM2, V Int, Scalar Int, V Double) -> V Bool
 ldpc = run1 $ \t ->
-  let (a, b, c, d, e, f, g) = unlift t :: (Acc (Scalar Int), Acc (Scalar DIM2), Acc (V DIM2), Acc (V Int), Acc (M Double), Acc (Scalar Int), Acc (V Double))
+  let (sz, zeroArrayletCount, nonzeroBlocks, qmSh, offsets, maxIterations, orig_lam) = unlift t ::
+        (Acc (Scalar Int), Acc (Scalar Int), Acc (M Bool), Acc (Scalar DIM2), Acc (V Int), Acc (Scalar Int), Acc (V Double))
+      mLet                                = initMatrixlet (unit $ lift (0 :: Double)) sz zeroArrayletCount nonzeroBlocks qmSh offsets
   in
-  ldpc' (lift (a, b, c, d, e)) f g
+  ldpc' mLet maxIterations orig_lam
 
 -- | Runs Accelerate computation on GPU
 fromAcc :: Acc (V Bool) -> U.Vector Bool
@@ -133,18 +170,12 @@ type Matrixlet a =
     (M a)         -- | Arraylets (one arraylet per column)
 
 initMatrixlet :: forall a. (U.Unbox a, Elt a, a ~ Plain a, Lift Exp a) =>
-  a -> Q.QuasiCyclic Integer -> Acc (Matrixlet a)
-initMatrixlet zero (Q.QuasiCyclic sz qm) =
-    lift (unit (lift sz), dim, blockCoords, offsets, arraylets)
+  Acc (Scalar a) -> Acc (Scalar Int) -> Acc (Scalar Int) -> Acc (M Bool) -> Acc (Scalar DIM2) -> Acc (V Int) -> Acc (Matrixlet a)
+initMatrixlet zero sz zeroArrayletCount nonzeroBlocks sh offsets =
+    lift (sz, dim, blockCoords, offsets, arraylets)
   where
-    dim = unit $ lift (Z :. M.nrows qm*sz :. M.ncols qm*sz)
-
-    nonzeroBlocks :: Acc (M Bool)
-    nonzeroBlocks =
-      use
-        (fromVectors (Z :. M.nrows qm :. M.ncols qm)
-                     (S.map boolToWord8
-                       (U.convert (M.getMatrixAsVector (fmap (P./= 0) qm)))))
+    (rowCount, colCount) = unlift $ unindex2 $ the sh :: (Exp Int, Exp Int)
+    dim = unit $ lift (Z :. rowCount*the sz :. colCount*the sz)
 
     blockCoords :: Acc (V DIM2)
     blockCoords =
@@ -158,35 +189,9 @@ initMatrixlet zero (Q.QuasiCyclic sz qm) =
     arraylets :: Acc (M a)
     arraylets =
       fill (lift (Z
-                  :. sz
-                  :. (M.nrows qm*M.ncols qm)-zeroArrayletCount))
-           (lift zero)
-
-    -- Offset vector
-    offsets :: Acc (V Int)
-    offsets =
-      use $
-      fromList (Z :. (M.nrows qm*M.ncols qm)-zeroArrayletCount) $
-      foldMap (\n ->
-        case n of
-          0 -> []
-          _ -> [g n]) $
-      qm
-
-    zeroArrayletCount :: Int
-    zeroArrayletCount =
-      getSum $
-      foldMap (\n ->
-        case n of
-          0 -> 1
-          _ -> 0) $
-      qm
-
-    -- The number must be a power of two, because there is only one bit set.
-    g :: Integer -> Int
-    g x | x `testBit` 0 = 0
-        | x P.== 0      = error "got to zero; should never happen"
-        | otherwise     = 1 + g (x `shiftR` 1)
+                  :. the sz
+                  :. (rowCount*colCount)-the zeroArrayletCount))
+           (lift (the zero))
 
 -- | Do the given coordinates give a non-zero value in a circulant with the
 -- given size and offset parameters? The coordinates are given in arraylet
