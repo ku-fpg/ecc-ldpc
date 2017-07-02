@@ -252,15 +252,17 @@ matrixMatrixlet mLet f =
     ,realDim
     ,blockCoords
     ,offsets
-    ,generate (shape arraylets)
-      $ \ix ->
+    ,imap
+       (\ix _ ->
           let (i, arrIx) = unlift $ unindex2 ix :: (Exp Int, Exp Int)
               (r0, c0)   = unlift $ unindex2 (blockCoords !! arrIx) :: (Exp Int, Exp Int)
               r          = (r0*sz) + i
               c          = (c0*sz) + ((i + (offsets !! arrIx)) `mod` sz)
           in
           f (r, c)
-    )
+       )
+       arraylets
+     )
   where
     (sz0, realDim, blockCoords, offsets, arraylets) = unlift mLet
       :: (Acc (Scalar Int), Acc (Scalar DIM2), Acc (V DIM2), Acc (V Int), Acc (M a))
