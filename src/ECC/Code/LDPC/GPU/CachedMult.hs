@@ -34,13 +34,20 @@ import Data.Traversable (for)
 import Data.Monoid hiding (All, Any)
 
 code :: Code
-code = mkLDPC_Code "gpu-arraylet-cm" E.encoder decoder
+code = ldpc `seq` mkLDPC_Code "gpu-arraylet-cm" E.encoder decoder
 
 decoder :: Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool)
-decoder a rate maxIterations orig_lam =
-  Just $ fromAcc (ldpc mLet maxIterations (toAcc sh orig_lam))
-  where mLet = initMatrixlet 0 a
+decoder arr rate maxIterations orig_lam =
+  Just $ U.map word8ToBool $ U.convert $ toVectors $ ldpc (a, b, c, d, e, run $ unit $ lift maxIterations, fromVectors sh (U.convert orig_lam))
+  where (a, b, c, d, e) = run $ initMatrixlet 0 arr :: (Scalar Int, Scalar DIM2, V DIM2, V Int, M Double)
         sh   = Z :. U.length orig_lam
+
+-- | Compiled ldpc'
+ldpc :: (Scalar Int, Scalar DIM2, V DIM2, V Int, M Double, Scalar Int, V Double) -> V Bool
+ldpc = run1 $ \t ->
+  let (a, b, c, d, e, f, g) = unlift t :: (Acc (Scalar Int), Acc (Scalar DIM2), Acc (V DIM2), Acc (V Int), Acc (M Double), Acc (Scalar Int), Acc (V Double))
+  in
+  ldpc' (lift (a, b, c, d, e)) f g
 
 -- | Runs Accelerate computation on GPU
 fromAcc :: Acc (V Bool) -> U.Vector Bool
@@ -297,8 +304,8 @@ imapMatrixlet f mLet =
 
     (realRowCount, realColCount) = unlift $ unindex2 $ the realDim :: (Exp Int, Exp Int)
 
-ldpc :: Acc (Matrixlet Double) -> Int -> Acc (V Double) -> Acc (V Bool)
-ldpc mLet maxIterations orig_lam =
+ldpc' :: Acc (Matrixlet Double) -> Acc (Scalar Int) -> Acc (V Double) -> Acc (V Bool)
+ldpc' mLet maxIterations orig_lam =
   map hard' $ loop 0 mLet orig_lam
   where
     loop :: Int -> Acc (Matrixlet Double) -> Acc (V Double) -> Acc (V Double)
@@ -306,15 +313,15 @@ ldpc mLet maxIterations orig_lam =
       let (finalN, ne, r) = unlift (awhile loopCond loopBody liftedInit)
                             :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
       in
-      acond (the finalN >= lift maxIterations)
-            r --(lift orig_lam)
+      acond (the finalN >= the maxIterations)
+            (lift orig_lam)
             r
       where
         liftedInit :: Acc (Scalar Int, Matrixlet Double, V Double)
         liftedInit = lift (unit (lift n), ne, lam)
 
     loopCond :: Acc (Scalar Int, Matrixlet Double, V Double) -> Acc (Scalar Bool)
-    loopCond t = unit $ (the n < lift maxIterations) && not (the (A.all (== lift False) ans))
+    loopCond t = unit $ (the n < the maxIterations) && not (the (A.all (== lift False) ans))
       where
         (n, ne, lam) = unlift t :: (Acc (Scalar Int), Acc (Matrixlet Double), Acc (V Double))
 

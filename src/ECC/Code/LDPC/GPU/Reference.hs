@@ -4,7 +4,7 @@
 
 module ECC.Code.LDPC.GPU.Reference where
 
-import Prelude hiding (map, Num, Eq, (>), (<), (>=), (<=), (==), (/=), zipWith, all, (||), (++), fst, snd, (!!), not, replicate, (&&), Fractional, Floating, RealFloat, filter, zip, any, odd)
+import Prelude hiding (map, Num, Eq, (>), (<), (>=), (<=), (==), (/=), zipWith, all, (||), (++), fst, snd, (!!), not, replicate, (&&), Fractional, Floating, RealFloat, filter, zip, any, even, sum, or, and, odd)
 import qualified Prelude as P
 
 import ECC.Code.LDPC.Utils
@@ -18,7 +18,7 @@ import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as V
 import Debug.Trace
 
-import Data.Array.Accelerate
+import Data.Array.Accelerate as A
 import Data.Array.Accelerate.Debug
 import Data.Array.Accelerate.IO
 import Data.Array.Accelerate.LLVM.PTX
@@ -29,7 +29,7 @@ type V a = Array DIM1 a
 type M a = Array DIM2 a
 
 code :: Code
-code = mkLDPC_Code "gpu-reference" encoder decoder
+code = compiledLdpc `seq` mkLDPC_Code "gpu-reference" encoder decoder
 
 ---------------------------------------------------------------------
 
@@ -42,7 +42,6 @@ decoder a0 rate maxIterations orig_lam =
   compiledLdpc
     (a
     ,run $ unit $ lift maxIterations
-    -- ,(use (fromVectors (Z :. U.length orig_lam) (U.convert orig_lam)))
     ,(fromVectors (Z :. U.length orig_lam) (U.convert orig_lam))
     )
   where
@@ -98,15 +97,14 @@ ldpc t0 = map hard' $ loop (unit 0) orig_ne orig_lam
                 lam'
 
     loopCond :: Acc (Scalar Int, M Double, V Double) -> Acc (Scalar Bool)
-    loopCond t = unit $ (the n < the maxIterations) && (the (any (/= lift False) ans))
+    loopCond t = unit $ (the n < the maxIterations) && the continue
       where
 
-        -- Parity of the population count of each row
-        ans :: Acc (V Bool)
-        ans =
-          generate
-            (lift (Z :. a0RowCount))
-            (\ix ->
+        continue :: Acc (Scalar Bool)
+        continue =
+          or $
+          imap
+            (\ix _ ->
               let r = unindex1 $ unlift ix :: Exp Int
               in
               odd . snd $
@@ -118,11 +116,35 @@ ldpc t0 = map hard' $ loop (unit 0) orig_ne orig_lam
                   lift
                     (c+1
                     ,cond (a0 ! lift (Z :. r :. c) && c_hat ! lift (Z :. c))
-                          v
                           (v+1)
+                          v
                     )
                 )
                 (lift (0::Int,0::Int)))
+            a0Rows
+
+        -- -- Parity of the population count of each row
+        -- ans :: Acc (V Bool)
+        -- ans =
+        --   generate
+        --     (lift (Z :. a0RowCount))
+        --     (\ix ->
+        --       let r = unindex1 $ unlift ix :: Exp Int
+        --       in
+        --       even . snd $
+        --       while
+        --         ((< a0ColCount) . fst)
+        --         (\p ->
+        --           let (c, v) = unlift p :: (Exp Int, Exp Int)
+        --           in
+        --           lift
+        --             (c+1
+        --             ,cond (a0 ! lift (Z :. r :. c) && c_hat ! lift (Z :. c))
+        --                   v
+        --                   (v+1)
+        --             )
+        --         )
+        --         (lift (0::Int,0::Int)))
 
 
         c_hat :: Acc (V Bool)
@@ -169,6 +191,7 @@ ldpc t0 = map hard' $ loop (unit 0) orig_ne orig_lam
         lam' = zipWith (+) orig_lam (fold1 (+) (transpose ne'))
 
     (a0RowCount, a0ColCount) = unlift $ unindex2 (shape a0) :: (Exp Int, Exp Int)
+    a0Rows = enumFromN (lift (Z :. a0RowCount)) 0 :: Acc (V Int)
     colCount = unindex1 (shape orig_lam) :: Exp Int
 
 
