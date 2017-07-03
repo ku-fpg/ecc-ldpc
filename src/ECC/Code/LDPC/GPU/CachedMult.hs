@@ -37,11 +37,12 @@ code :: Code
 code = ldpc `seq` mkLDPC_Code "gpu-arraylet-cm" E.encoder decoder
 
 decoder :: Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool)
-decoder arr@(Q.QuasiCyclic sz qm) rate maxIterations orig_lam =
-  Just $ U.map word8ToBool $ U.convert $ toVectors $ ldpc (run $ unit $ lift sz, run $ unit $ lift zeroArrayletCount, nonzeroBlocks, run $ unit $ lift qmSh, offsets, run $ unit $ lift maxIterations, fromVectors sh (U.convert orig_lam))
+decoder arr@(Q.QuasiCyclic sz qm) = \rate maxIterations orig_lam ->
+  let sh   = Z :. U.length orig_lam
+  in
+  Just $ U.map word8ToBool $ U.convert $ toVectors $ ldpc (a, b, c, d, e, run $ unit $ lift maxIterations, fromVectors sh (U.convert orig_lam))
   where
-    -- (a, b, c, d, e) = run $ initMatrixlet 0 arr :: (Scalar Int, Scalar DIM2, V DIM2, V Int, M Double)
-    sh   = Z :. U.length orig_lam
+    (a, b, c, d, e) = run $ initMatrixlet (unit $ lift (0 :: Double)) (unit (lift sz)) (unit $ lift zeroArrayletCount) (use nonzeroBlocks) (unit $ lift qmSh) (use offsets)
     qmSh = Z :. M.nrows qm :. M.ncols qm
 
     -- The number must be a power of two, because there is only one bit set.
@@ -78,13 +79,12 @@ decoder arr@(Q.QuasiCyclic sz qm) rate maxIterations orig_lam =
 
 
 -- | Compiled ldpc'
-ldpc :: (Scalar Int, Scalar Int, M Bool, Scalar DIM2, V Int, Scalar Int, V Double) -> V Bool
+ldpc :: (Scalar Int, Scalar DIM2, V DIM2, V Int, M Double, Scalar Int, V Double) -> V Bool
 ldpc = run1 $ \t ->
-  let (sz, zeroArrayletCount, nonzeroBlocks, qmSh, offsets, maxIterations, orig_lam) = unlift t ::
-        (Acc (Scalar Int), Acc (Scalar Int), Acc (M Bool), Acc (Scalar DIM2), Acc (V Int), Acc (Scalar Int), Acc (V Double))
-      mLet                                = initMatrixlet (unit $ lift (0 :: Double)) sz zeroArrayletCount nonzeroBlocks qmSh offsets
+  let (a, b, c, d, e, maxIterations, orig_lam) = unlift t ::
+        (Acc (Scalar Int), Acc (Scalar DIM2), Acc (V DIM2), Acc (V Int), Acc (M Double), Acc (Scalar Int), Acc (V Double))
   in
-  ldpc' mLet maxIterations orig_lam
+  ldpc' (lift (a, b, c, d, e)) maxIterations orig_lam
 
 -- | Runs Accelerate computation on GPU
 fromAcc :: Acc (V Bool) -> U.Vector Bool
