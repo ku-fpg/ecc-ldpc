@@ -56,9 +56,13 @@ library
                 zlib            >= 0.5.4 && < 0.7,
                 accelerate      >= 1.0.0.0,
                 accelerate-llvm-ptx >=  1.0.0.1 && < 1.2.0.0,
-                accelerate-io   >= 1.0.0.0
+                accelerate-io   >= 1.0.0.0,
+                ekg,
+                ekg-core,
+                cuda
   hs-source-dirs:      src
-  Ghc-options: -O4 -threaded -auto-all -debug
+  Ghc-options: -O4 -threaded -auto-all -rtsopts
+    -- -debug
 
 executable ecc-ldpc
   build-depends:
@@ -77,10 +81,14 @@ executable ecc-ldpc
                 zlib            >= 0.5.4 && < 0.7,
                 accelerate      >= 1.0.0.0,
                 accelerate-llvm-ptx >=  1.0.0.1 && < 1.2.0.0,
-                accelerate-io   >= 1.0.0.0
+                accelerate-io   >= 1.0.0.0,
+                ekg,
+                ekg-core,
+                cuda
   Main-is: Main.hs
   hs-source-dirs: src, main
-  Ghc-options: -O4 -threaded -auto-all -debug
+  Ghc-options: -O4 -threaded -auto-all -rtsopts
+    -- -debug
 
 -- cabal configure --enable-executable-profiling 
 

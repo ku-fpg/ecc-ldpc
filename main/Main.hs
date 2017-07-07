@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main where
 
 import ECC.Tester
@@ -18,13 +20,26 @@ import qualified ECC.Code.LDPC.Fast.CachedMult as CachedMult
 import qualified ECC.Code.LDPC.GPU.CachedMult as GPUCachedMult
 import qualified ECC.Code.LDPC.GPU.Reference as GPUReference
 import qualified ECC.Code.LDPC.Zero as Zero
+import qualified ECC.Code.LDPC.GPU.CUDA.CachedMult as CUDACachedMult
+
+import Data.Array.Accelerate.LLVM.PTX
+
+import Data.Array.Accelerate.Debug
+import System.Metrics
+import System.Remote.Monitoring
 
 codes :: Code
 codes = Unencoded.code <> OrigReference.code <> Sparse.code <> Min.code <> SparseMin.code <> Model.code <> ElimTanh.code
-            <> Arraylet.code <> ArrayletMin.code <> CachedMult.code <> GPUCachedMult.code <> GPUReference.code <> Zero.code
+            <> Arraylet.code <> ArrayletMin.code <> CachedMult.code <> GPUCachedMult.code <> GPUReference.code <> Zero.code <> CUDACachedMult.code
 
 -- usage: ./Main 0 2 4 6 8 0  bpsk
 -- or, to run the LDPC reference implementation, at a single EBNO = 2.2
 --        ./Main 2.2 ldpc/reference/jpl.1K/20
 main :: IO ()
-main = eccMain codes eccPrinter
+main = do
+  -- store <- initAccMetrics
+  -- registerGcMetrics store
+  -- server <- forkServerWith store "localhost" 8000
+
+  -- registerPinnedAllocator
+  eccMain codes eccPrinter
