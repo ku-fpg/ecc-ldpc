@@ -59,7 +59,8 @@ library
                 accelerate-io   >= 1.0.0.0,
                 ekg,
                 ekg-core,
-                cuda
+                cuda,
+                deepseq
   hs-source-dirs:      src
   Ghc-options: -O4 -threaded -auto-all -rtsopts
     -- -debug
@@ -84,7 +85,8 @@ executable ecc-ldpc
                 accelerate-io   >= 1.0.0.0,
                 ekg,
                 ekg-core,
-                cuda
+                cuda,
+                deepseq
   Main-is: Main.hs
   hs-source-dirs: src, main
   Ghc-options: -O4 -threaded -auto-all -rtsopts

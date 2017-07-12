@@ -26,7 +26,7 @@ mkLDPC :: (MatrixLoader g, MatrixLoader h)
        -> (g -> Rate -> U.Vector Bool -> U.Vector Bool)
        -> (h -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
        -> IO (ECC IO)
-mkLDPC prefix codeName maxI optRate encoder decoder = do
+mkLDPC prefix codeName maxI optRate encoder decoder0 = do
    g <- loadMatrix (codeName ++ "/G") -- with G, we prepend the identity
    print (getNRows g, getNCols g)
    -- #rows are the message size, #cols + #rows are the (unpunctuated) message
@@ -44,7 +44,7 @@ mkLDPC prefix codeName maxI optRate encoder decoder = do
    let c_length = (m_length * denominator rate) `div` numerator rate
    print $ c_length
    let encoder' = encoder g rate
-   let decoder' = decoder h rate maxI
+   let decoder' = decoder0 h rate maxI
    let unpuncture xs = U.take c_length xs `mappend` U.replicate (getNCols h - c_length) 0
    return $ ECC
         { name     = "ldpc/" ++ prefix ++ "/" ++ codeName ++ "/" ++ show maxI ++ "/" ++ show (numerator rate) ++ "/" ++  show (denominator rate)
@@ -63,27 +63,32 @@ mkLDPC_Code :: (MatrixLoader g, MatrixLoader h)
             -> (g -> Rate -> U.Vector Bool -> U.Vector Bool)
             -> (h -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool))
             -> Code
-mkLDPC_Code name encoder decoder = Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/codeword/message]"]
-     $ \ xs -> case xs of
+mkLDPC_Code name encoder decoder = Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/codeword/message]"] (pure ()) (const (pure ()))
+     $ \ vars xs -> case xs of
                 ["ldpc",nm,m,n,x,y] | nm == name && all isDigit n && all isDigit x && all isDigit y
                    -> fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder decoder'
                 ["ldpc",nm,m,n] | nm == name && all isDigit n
                    -> fmap (: []) $ mkLDPC name m (read n) Nothing encoder decoder'
                 _  -> return []
-      where decoder' = \x y z -> pure . decoder x y z
+      where decoder' h = \x y z -> pure $ decoder h x y z
 
 mkLDPC_CodeIO :: (MatrixLoader g, MatrixLoader h)
             => String
             -> (g -> Rate -> U.Vector Bool -> U.Vector Bool)
-            -> (h -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
+            -> (vars -> h -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
+            -> IO vars
+            -> (vars -> IO ())
             -> Code
-mkLDPC_CodeIO name encoder decoder = Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/codeword/message]"]
-     $ \ xs -> case xs of
-                ["ldpc",nm,m,n,x,y] | nm == name && all isDigit n && all isDigit x && all isDigit y
-                   -> fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder decoder
-                ["ldpc",nm,m,n] | nm == name && all isDigit n 
-                   -> fmap (: []) $ mkLDPC name m (read n) Nothing encoder decoder
-                _  -> return []
+mkLDPC_CodeIO name encoder decoder initialize finalize =
+  Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/codeword/message]"]
+       initialize
+       finalize
+       $ \ vars xs -> case xs of
+                        ["ldpc",nm,m,n,x,y] | nm == name && all isDigit n && all isDigit x && all isDigit y
+                           -> fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder (decoder vars)
+                        ["ldpc",nm,m,n] | nm == name && all isDigit n 
+                           -> fmap (: []) $ mkLDPC name m (read n) Nothing encoder (decoder vars)
+                        _  -> return []
 
 
 

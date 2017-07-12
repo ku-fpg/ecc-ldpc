@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module ECC.Code.LDPC.GPU.CUDA.CachedMult where
 
@@ -24,32 +25,54 @@ import Data.Monoid
 -- import Foreign.CUDA hiding (launchKernel)
 import Foreign.CUDA.Runtime.Marshal
 import Foreign.CUDA.Types
-import Foreign.CUDA.Driver.Exec -- (Fun(..), launchKernel)
+-- import qualified Foreign.CUDA.Driver as CUDA
+import Foreign.CUDA.Driver.Context.Base
+import Foreign.CUDA.Driver.Exec
+import qualified Foreign.CUDA.Driver.Device as CUDA
 import Foreign.CUDA.Driver.Module
 
 import GHC.Int
 
-code :: Code
-code = mkLDPC_CodeIO "cuda-arraylet-cm" E.encoder decoder
+import Control.DeepSeq
 
-decoder :: Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))
-decoder arr@(Q.QuasiCyclic sz _) = \rate maxIterations orig_lam -> do
+type IntT = Int32
+
+data CudaAllocations =
+  CudaAllocations
+  { ldpcFun      :: Fun
+  , cm           :: Module
+  , ctx          :: Context
+  -- , result_dev   :: DevicePtr IntT
+  -- , offsets      :: DevicePtr IntT
+  -- , mLet         :: DevicePtr Double
+  -- , mLetRowCount :: IntT
+  -- , mLetColCount :: IntT
+  }
+
+code :: Code
+code = mkLDPC_CodeIO "cuda-arraylet-cm" E.encoder decoder initialize finalize
+
+decoder ::
+  CudaAllocations -> Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))
+decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
   (mLet, offsets, rowCount, colCount) <- init'd
 
-  cm   <- loadFile "cudabits/cached_mult.ptx"
-  ldpc <- getFun cm "ldpc"
+  cm      <- loadFile "cudabits/cached_mult.ptx"
+  ldpcFun <- getFun cm "ldpc"
 
-  result_dev   <- mallocArray (U.length orig_lam) :: IO (DevicePtr Int)
-  orig_lam_dev <- newListArray $ U.toList $ orig_lam
+  (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
+  result_dev   <- mallocArray orig_lam_len :: IO (DevicePtr IntT)
 
-  launchKernel ldpc (1,1,1) (1,1,1) 0 Nothing [VArg mLet, VArg offsets, IArg rowCount, IArg colCount, IArg (fromIntegral maxIterations), VArg orig_lam_dev, VArg result_dev]
+  launchKernel ldpcFun (1,1,1) (1,1,1) 0 Nothing [VArg mLet, VArg offsets, IArg rowCount, IArg colCount, IArg (fromIntegral maxIterations), VArg orig_lam_dev, IArg (fromIntegral orig_lam_len), VArg result_dev]
 
-  result <- peekListArray (U.length orig_lam) result_dev
+  sync
 
-  free mLet
-  free offsets
+  result <- peekListArray orig_lam_len result_dev
+
   free result_dev
   free orig_lam_dev
+  free mLet
+  free offsets
 
   return $! Just $! U.map toBool $! U.fromList result
   where
@@ -58,7 +81,27 @@ decoder arr@(Q.QuasiCyclic sz _) = \rate maxIterations orig_lam -> do
     toBool 1 = True
     toBool n = error $ "toBool: invalid arg: " ++ show n
 
-initMatrixlet :: Q.QuasiCyclic Integer -> IO (DevicePtr Double, DevicePtr Int, Int32, Int32)
+initialize :: IO CudaAllocations
+initialize = do
+  -- CUDA.initialise []
+  -- dev0 <- device
+  -- dev0props <- CUDA.props dev0
+  -- print dev0props
+
+  -- cm      <- loadFile "cudabits/cached_mult.ptx"
+  -- ldpcFun <- getFun cm "ldpc"
+
+  -- ctx     <- create dev0 []
+
+  return (CudaAllocations {..})
+
+finalize :: CudaAllocations -> IO ()
+finalize CudaAllocations {..} = do
+    return ()
+  -- unload cm
+  -- destroy ctx
+
+initMatrixlet :: Q.QuasiCyclic Integer -> IO (DevicePtr Double, DevicePtr IntT, IntT, IntT)
 initMatrixlet (Q.QuasiCyclic sz qm) = do
   mLetPtr    <- mallocArray (mLetRowCount * mLetColCount)
   offsetsPtr <- newListArray offsets
@@ -69,16 +112,16 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
 
   where
     mLetRowCount = sz
-    mLetColCount = (M.nrows qm * M.ncols qm) - zeroArrayletCount
+    mLetColCount = (M.nrows qm * M.ncols qm) - fromIntegral zeroArrayletCount
 
     -- The number must be a power of two, because there is only one bit set.
-    g :: Integer -> Int
+    g :: Integer -> IntT
     g x | x `testBit` 0 = 0
         | x == 0        = error "got to zero; should never happen"
         | otherwise     = 1 + g (x `shiftR` 1)
 
 
-    zeroArrayletCount :: Int
+    zeroArrayletCount :: IntT
     zeroArrayletCount =
       getSum $
       foldMap (\n ->
@@ -87,7 +130,7 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
           _ -> 0) $
       qm
 
-    offsets :: [Int]
+    offsets :: [IntT]
     offsets =
       foldMap (\n ->
         case n of

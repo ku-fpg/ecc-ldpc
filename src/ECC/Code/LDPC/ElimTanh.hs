@@ -23,7 +23,9 @@ type V a = V.Vector a
 
 code :: Code
 code = Code ["ldpc/elimTanh/<matrix-name>/<max-rounds>[/<truncation-size>]"]
-     $ \ xs -> return []
+            (pure ())
+            (const (pure ()))
+     $ \ vars xs -> return []
 {-
 Code ["ldpc/elimTanh/<matrix-name>/<max-rounds>[/<truncation-size>]"]
      $ \ xs -> case xs of
