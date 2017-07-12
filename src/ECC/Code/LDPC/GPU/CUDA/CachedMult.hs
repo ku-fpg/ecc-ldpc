@@ -34,6 +34,8 @@ import Foreign.CUDA.Driver.Module
 import GHC.Int
 
 import Control.DeepSeq
+import Data.Foldable (fold)
+import Control.Monad (liftM2)
 
 type IntT = Int32
 
@@ -55,15 +57,16 @@ code = mkLDPC_CodeIO "cuda-arraylet-cm" E.encoder decoder initialize finalize
 decoder ::
   CudaAllocations -> Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
-  (mLet, offsets, rowCount, colCount) <- init'd
+  (mLet, offsets, rowCount, colCount, runningRowPop_dev, runningColPop_dev) <- init'd
 
   cm      <- loadFile "cudabits/cached_mult.ptx"
   ldpcFun <- getFun cm "ldpc"
 
   (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
   result_dev   <- mallocArray orig_lam_len :: IO (DevicePtr IntT)
+  -- result_dev <- newListArray $ U.toList $ orig_lam
 
-  launchKernel ldpcFun (1,1,1) (1,1,1) 0 Nothing [VArg mLet, VArg offsets, IArg rowCount, IArg colCount, IArg (fromIntegral maxIterations), VArg orig_lam_dev, IArg (fromIntegral orig_lam_len), VArg result_dev]
+  launchKernel ldpcFun (orig_lam_len,1,1) (1,1,1) (orig_lam_len*8 + 16) Nothing [VArg mLet, IArg (fromIntegral sz), VArg runningRowPop_dev, VArg runningColPop_dev, VArg offsets, IArg rowCount, IArg colCount, IArg (fromIntegral maxIterations), VArg orig_lam_dev, IArg (fromIntegral orig_lam_len), VArg result_dev]
 
   sync
 
@@ -73,6 +76,10 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
   free orig_lam_dev
   free mLet
   free offsets
+  free runningRowPop_dev
+  free runningColPop_dev
+
+  -- unload cm
 
   return $! Just $! U.map toBool $! U.fromList result
   where
@@ -101,18 +108,34 @@ finalize CudaAllocations {..} = do
   -- unload cm
   -- destroy ctx
 
-initMatrixlet :: Q.QuasiCyclic Integer -> IO (DevicePtr Double, DevicePtr IntT, IntT, IntT)
+initMatrixlet :: Q.QuasiCyclic Integer -> IO (DevicePtr Double, DevicePtr IntT, IntT, IntT, DevicePtr IntT, DevicePtr IntT)
 initMatrixlet (Q.QuasiCyclic sz qm) = do
   mLetPtr    <- mallocArray (mLetRowCount * mLetColCount)
   offsetsPtr <- newListArray offsets
 
   memset mLetPtr (fromIntegral (mLetRowCount * mLetColCount)) 0
 
-  return (mLetPtr, offsetsPtr, fromIntegral mLetRowCount, fromIntegral mLetColCount)
+  let runningRowPop = map (fromIntegral :: Integer -> IntT) $ scanl (\x y -> x + pop y) 0 $ M.toLists qm
+      runningColPop = map (fromIntegral :: Integer -> IntT) $ scanl (\x y -> x + pop y) 0 $ M.toLists $ M.transpose qm
+
+  print (runningRowPop, runningColPop)
+
+  runningRowPop_dev <- newListArray runningRowPop
+  runningColPop_dev <- newListArray runningColPop
+
+  return (mLetPtr, offsetsPtr, fromIntegral mLetRowCount, fromIntegral mLetColCount, runningRowPop_dev, runningColPop_dev)
 
   where
     mLetRowCount = sz
     mLetColCount = (M.nrows qm * M.ncols qm) - fromIntegral zeroArrayletCount
+
+    pop :: [Integer] -> Integer
+    pop =
+      getSum .
+      foldMap (\n ->
+        if n == 0
+        then 0
+        else 1)
 
     -- The number must be a power of two, because there is only one bit set.
     g :: Integer -> IntT
