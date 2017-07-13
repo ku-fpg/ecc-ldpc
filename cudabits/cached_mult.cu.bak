@@ -3,7 +3,6 @@ extern "C" __global__ void final_result() {
 }
 
 
-#if 0
 // From http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#axzz4meEZrFDA
 __device__ double atomicAdd(double* address, double val)
 {
@@ -22,7 +21,6 @@ __device__ double atomicAdd(double* address, double val)
 
     return __longlong_as_double(old);
 }
-#endif
 
 __device__ int currPop(int ix, int* runningPopulation) {
   return runningPopulation[ix+1] - runningPopulation[ix];
@@ -37,40 +35,63 @@ __device__ int indexR(int r, int sz, int* runningRowPop, int* runningColPop, int
   return skipAmt(blockR, sz, runningRowPop) + ((r + offsets[r]) % sz);
 }
 
-extern "C" __device__ void sumRow(double* mLet, double* initVals, double* rowSums, int rowCount, int colCount, int sz, int* runningRowPop, int* runningColPop, int* offsets) {
-  int iPrime = blockDim.x * blockIdx.x + threadIdx.x;
-  /* int iPrime = (i * sz) + */ 
+__device__ void sumRow(double* mLet, double* rowSums, int rowCount, int colCount, int sz, int* runningRowPop, int* runningColPop, int* offsets) {
+  if (blockIdx.x >= rowCount) return;
 
-  if (iPrime < rowCount) {
-    rowSums[iPrime] = initVals[iPrime];
-    for (int j = 0; j < colCount; ++j) {
-      /* printf("(%d, %d)  ", j, iPrime); */
-      rowSums[iPrime] += mLet[(j*sz) + iPrime];
-    }
-    /* printf("%f ", rowSums[iPrime]); */
+  double rowSum = 0;
+
+  int i = blockIdx.x;
+  for (int j = 0; j < currPop(i/sz, runningRowPop); ++j) {
+    int r = i%sz;
+    int c = j + (i/sz)*colCount;
+    rowSum += mLet[(c*sz) + r];
   }
+
+  atomicAdd(&rowSums[blockIdx.x], rowSum);
 }
 
-__global__ void sumCol(double* mLet, double* colSums, int rowCount, int colCount, int sz, int* runningRowPop, int* runningColPop, int* offsets) {
+__device__ void sumCol(double* mLet, double* colSums, int rowCount, int colCount, int sz, int* runningRowPop, int* runningColPop, int* offsets) {
+
+  double colSum = 0;
+
+  int i = blockIdx.x;
+  for (int j = 0; j < colCount; ++j) {
+    int r = (j + offsets[j]) % sz;
+    int c = (j / sz)*colCount + i;
+    printf("[%d] <- (%d, %d)\n", blockIdx.x, r, c);
+
+    colSum += mLet[(c*sz) + r];
+  }
+
+  atomicAdd(&colSums[blockIdx.x], colSum);
 }
 
 extern "C" __global__ void ldpc(double* mLet, int sz, int* runningRowPop, int* runningColPop, int* offsets, int rowCount, int colCount, int maxIterations, double* orig_lam, int orig_lam_len, int* result) {
   extern __shared__ double lamPrime[];
 
-  result[blockIdx.x]   = orig_lam[blockIdx.x] > 0;
-  lamPrime[blockIdx.x] = orig_lam[blockIdx.x];
+  result[blockIdx.x] = orig_lam[blockIdx.x] > 0;
   __syncthreads();
 
   int currAns = 1;
   int currAnsXored;
 
   int i;
-  int iPrime = blockDim.x * blockIdx.x + threadIdx.x;
   for (i = 0; i < maxIterations && currAns; ++i) {
-    sumRow(mLet, orig_lam, lamPrime, rowCount, colCount, sz, runningRowPop, runningColPop, offsets);
 
+    /* for (int j = 0; j < rowCount; ++j) { */
+    /*   mLet[(((j*sz) + j) * colCount) + blockIdx.x]; */
+    /* } */
+    /* __syncthreads(); */
 
-    currAnsXored = __syncthreads_count(lamPrime[iPrime]>0) % 2;
+    lamPrime[blockIdx.x] = orig_lam[blockIdx.x];
+    sumCol(mLet, lamPrime, rowCount, colCount, sz, runningRowPop, runningColPop, offsets);
+    /* for (int j = 0; j < rowCount; ++j) { */
+    /*   /1* atomicAdd(&lamPrime[blockIdx.x] *1/ */
+    /*   /1*          ,mLet[indexR(j, sz, runningRowPop, runningColPop, offsets)] *1/ */
+    /*   /1*          ); *1/ */
+    /* } */
+
+    currAnsXored = __syncthreads_count(result[blockIdx.x]>0) % 2;
     currAns      = __syncthreads_or(currAnsXored);
     /* __syncthreads(); // TODO: See if this is necessary */
   }

@@ -1,6 +1,6 @@
 NVCC_COMPILER_OPTS=-std=c++98
 ARCH_FLAGS=-arch=sm_35 -gencode=arch=compute_35,code=sm_35 -rdc=true -lcudadevrt
-NVCC_OPTS= --ptx -g
+NVCC_OPTS= --ptx -g -dc
 
 all: cudabits/cached_mult.ptx
 	cabal build

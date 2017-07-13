@@ -118,7 +118,7 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
   let runningRowPop = map (fromIntegral :: Integer -> IntT) $ scanl (\x y -> x + pop y) 0 $ M.toLists qm
       runningColPop = map (fromIntegral :: Integer -> IntT) $ scanl (\x y -> x + pop y) 0 $ M.toLists $ M.transpose qm
 
-  print (runningRowPop, runningColPop)
+  -- print (runningRowPop, runningColPop)
 
   runningRowPop_dev <- newListArray runningRowPop
   runningColPop_dev <- newListArray runningColPop
