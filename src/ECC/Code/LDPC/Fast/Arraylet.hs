@@ -175,7 +175,7 @@ ldpc mLet maxIterations orig_lam = {- traceShow msg $ -} U.map hard $ loop 0 mLe
       where
         ans :: V Bool
         ans = foldColsMatrixlet (/=) $ matrixMatrixlet mLet $ \ (r,c) -> hard (lam U.! c)
-        
+
         ne_tanh :: V.Vector [(Int,Double)]
         ne_tanh = foldColsMatrixlet' (\ (m,n) v -> [(n, tanh (- ((lam U.! n - v) / 2)))]) (++) ne
 

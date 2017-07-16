@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns #-}
 
 module ECC.Code.LDPC.GPU.CUDA.CachedMult where
 
@@ -35,7 +36,7 @@ import GHC.Int
 
 import Control.DeepSeq
 import Data.Foldable (fold)
-import Control.Monad (liftM2)
+import Control.Monad --(liftM2)
 
 type IntT = Int32
 
@@ -57,36 +58,93 @@ code = mkLDPC_CodeIO "cuda-arraylet-cm" E.encoder decoder initialize finalize
 decoder ::
   CudaAllocations -> Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
-  (mLet, offsets, rowCount, colCount, runningRowPop_dev, runningColPop_dev) <- init'd
+  (mLet, offsets, rowCount, colCount) <- init'd
 
   cm      <- loadFile "cudabits/cached_mult.ptx"
-  ldpcFun <- getFun cm "ldpc"
+  -- ldpcFun <- getFun cm "ldpc"
+  tanhTransformFun <- getFun cm "tanhTransform"
+  updateLamFun     <- getFun cm "updateLam"
+  checkParityFun   <- getFun cm "checkParity"
+
+  newMLet <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
+  parity_dev  <- mallocArray 1 :: IO (DevicePtr Bool)
 
   (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
-  result_dev   <- mallocArray orig_lam_len :: IO (DevicePtr IntT)
-  -- result_dev <- newListArray $ U.toList $ orig_lam
+  lam_dev <- newListArray $ U.toList $ orig_lam
 
-  launchKernel ldpcFun (orig_lam_len,1,1) (1,1,1) (orig_lam_len*8 + 16) Nothing [VArg mLet, IArg (fromIntegral sz), VArg runningRowPop_dev, VArg runningColPop_dev, VArg offsets, IArg rowCount, IArg colCount, IArg (fromIntegral maxIterations), VArg orig_lam_dev, IArg (fromIntegral orig_lam_len), VArg result_dev]
+  let go !iters
+        | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
+        | otherwise              = do
+            -- Check
+            launchKernel checkParityFun
+                         (fromIntegral colCount, 1, 1)
+                         (1, 1, 1)
+                         (fromIntegral $ 8 * colCount)
+                         Nothing
+                         [VArg parity_dev
+                         ,VArg newMLet
+                         ,VArg lam_dev
+                         ,IArg rowCount
+                         ,IArg colCount
+                         ]
+            [parity] <- peekListArray 1 parity_dev
+
+            unless parity $ do
+              -- Update matrix
+              launchKernel tanhTransformFun
+                           (fromIntegral rowCount, fromIntegral colCount, 1)
+                           (1,1,1)
+                           0
+                           Nothing
+                           [VArg mLet
+                           ,VArg newMLet
+                           ,VArg lam_dev
+                           ,IArg rowCount
+                           ,IArg colCount
+                           ,IArg (fromIntegral sz)
+                           ,VArg offsets
+                           ]
+
+              -- Update guess
+              launchKernel updateLamFun
+                           (fromIntegral rowCount, fromIntegral colCount, 1)
+                           (1,1,1)
+                           0
+                           Nothing
+                           [VArg lam_dev
+                           ,VArg newMLet
+                           ,IArg rowCount
+                           ,IArg colCount
+                           ,IArg (fromIntegral sz)
+                           ]
+
+              copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
+              go (iters+1)
+
+  go 0
+
+  -- launchKernel ldpcFun (orig_lam_len,1,1) (1,1,1) (orig_lam_len*8 + 16) Nothing [VArg mLet, IArg (fromIntegral sz), VArg offsets, IArg rowCount, IArg colCount, IArg (fromIntegral maxIterations), VArg orig_lam_dev, IArg (fromIntegral orig_lam_len), VArg result_dev]
 
   sync
 
-  result <- peekListArray orig_lam_len result_dev
+  result <- peekListArray orig_lam_len lam_dev
 
-  free result_dev
+  free lam_dev
   free orig_lam_dev
   free mLet
+  free newMLet
+  free parity_dev
   free offsets
-  free runningRowPop_dev
-  free runningColPop_dev
 
   -- unload cm
 
-  return $! Just $! U.map toBool $! U.fromList result
+  return $! Just $! U.map hard $! U.fromList result
   where
     init'd = initMatrixlet arr
     toBool 0 = False
-    toBool 1 = True
-    toBool n = error $ "toBool: invalid arg: " ++ show n
+    toBool _ = True
+    -- toBool 1 = True
+    -- toBool n = error $ "toBool: invalid arg: " ++ show n
 
 initialize :: IO CudaAllocations
 initialize = do
@@ -108,26 +166,20 @@ finalize CudaAllocations {..} = do
   -- unload cm
   -- destroy ctx
 
-initMatrixlet :: Q.QuasiCyclic Integer -> IO (DevicePtr Double, DevicePtr IntT, IntT, IntT, DevicePtr IntT, DevicePtr IntT)
+initMatrixlet :: Q.QuasiCyclic Integer -> IO (DevicePtr Double, DevicePtr IntT, IntT, IntT)
 initMatrixlet (Q.QuasiCyclic sz qm) = do
   mLetPtr    <- mallocArray (mLetRowCount * mLetColCount)
   offsetsPtr <- newListArray offsets
 
   memset mLetPtr (fromIntegral (mLetRowCount * mLetColCount)) 0
 
-  let runningRowPop = map (fromIntegral :: Integer -> IntT) $ scanl (\x y -> x + pop y) 0 $ M.toLists qm
-      runningColPop = map (fromIntegral :: Integer -> IntT) $ scanl (\x y -> x + pop y) 0 $ M.toLists $ M.transpose qm
-
-  -- print (runningRowPop, runningColPop)
-
-  runningRowPop_dev <- newListArray runningRowPop
-  runningColPop_dev <- newListArray runningColPop
-
-  return (mLetPtr, offsetsPtr, fromIntegral mLetRowCount, fromIntegral mLetColCount, runningRowPop_dev, runningColPop_dev)
+  return (mLetPtr, offsetsPtr, fromIntegral mLetRowCount, fromIntegral mLetColCount)
 
   where
-    mLetRowCount = sz
-    mLetColCount = (M.nrows qm * M.ncols qm) - fromIntegral zeroArrayletCount
+    mLetRowCount = M.nrows qm*sz
+    mLetColCount = M.ncols qm
+    -- mLetRowCount = sz
+    -- mLetColCount = (M.nrows qm * M.ncols qm) -- - fromIntegral zeroArrayletCount
 
     pop :: [Integer] -> Integer
     pop =
@@ -144,20 +196,20 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
         | otherwise     = 1 + g (x `shiftR` 1)
 
 
-    zeroArrayletCount :: IntT
-    zeroArrayletCount =
-      getSum $
-      foldMap (\n ->
-        case n of
-          0 -> 1
-          _ -> 0) $
-      qm
+    -- zeroArrayletCount :: IntT
+    -- zeroArrayletCount =
+    --   getSum $
+    --   foldMap (\n ->
+    --     case n of
+    --       0 -> 1
+    --       _ -> 0) $
+    --   qm
 
     offsets :: [IntT]
     offsets =
       foldMap (\n ->
         case n of
-          0 -> []
+          0 -> [0]
           _ -> [g n]) $
       qm
 
