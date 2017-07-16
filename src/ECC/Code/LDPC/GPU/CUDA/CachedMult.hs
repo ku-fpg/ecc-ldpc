@@ -75,6 +75,9 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
   let go !iters
         | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
         | otherwise              = do
+            -- when (iters == 1) $ do lam <- peekListArray orig_lam_len lam_dev
+            --                        print (take 10 lam)
+
             -- Check
             launchKernel checkParityFun
                          (fromIntegral colCount, 1, 1)
@@ -104,6 +107,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
                            ,IArg (fromIntegral sz)
                            ,VArg offsets
                            ]
+
+              copyArray orig_lam_len orig_lam_dev lam_dev
 
               -- Update guess
               launchKernel updateLamFun
