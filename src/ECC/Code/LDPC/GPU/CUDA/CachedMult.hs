@@ -71,17 +71,23 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
 
   (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
   lam_dev <- newListArray $ U.toList $ orig_lam
+  falseArr <- newListArray [False]
+  zeroArr <- newListArray [0] :: IO (DevicePtr Int)
+  pop_dev <- newListArray [0] :: IO (DevicePtr Int)
 
   let go !iters
         | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
         | otherwise              = do
             -- Check
+            copyArray 1 falseArr parity_dev
+            copyArray 1 zeroArr pop_dev
             launchKernel checkParityFun
                          (1,1,1)
-                         (1,1,1)
-                         0 -- (fromIntegral $ 8 * colCount)
+                         -- (1,1,1)
+                         (1, fromIntegral rowCount, 1)
+                         8 -- (fromIntegral $ 8 * colCount)
                          Nothing
-                         [VArg parity_dev
+                         [VArg pop_dev
                          ,VArg mLet
                          ,VArg lam_dev
                          ,IArg rowCount
@@ -89,7 +95,9 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
                          ,IArg (fromIntegral sz)
                          ,VArg offsets
                          ]
-            [parity] <- peekListArray 1 parity_dev
+            -- [parity] <- peekListArray 1 parity_dev
+            [pop] <- peekListArray 1 pop_dev
+            let parity = pop > 0
 
             when parity $ do
               -- Update matrix

@@ -80,10 +80,19 @@ __device__ bool hard(double v) {
 }
 
 // lam vector coordinates //
-extern "C" __global__ void checkParity(bool* result, double* mLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
-  *result = false;
+extern "C" __global__ void checkParity(int* pop, double* mLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
+  /* volatile __shared__ bool done; */
 
-  for (int j = 0; j < rowCount; ++j) {
+  /* if (threadIdx.x == 0 && blockIdx.x == 0) { */
+  /*   *result = false; */
+  /* } */
+  /* __syncthreads(); */
+
+  int startJ = threadIdx.y; //*(rowCount/blockDim.y);
+  int j = startJ;
+  /* int startI = blockIdx.x*(colCount/blockDim.x); */
+
+  /* for (int j = startJ; j < startJ+(rowCount/blockDim.y); ++j) { */
     bool rowResult = false;
     for (int i = 0; i < colCount; ++i) {
       int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
@@ -92,10 +101,24 @@ extern "C" __global__ void checkParity(bool* result, double* mLet, double* lam, 
         rowResult = (rowResult != hard(lam[lamIx]));
       }
     }
-    if (rowResult) {
-      *result = true;
-      break;
-    }
-  }
+
+    atomicAdd(pop, (rowResult ? 1 : 0));
+
+    /* __syncthreads(); */
+    /* bool localResult = __any(rowResult); */
+    /* printf("%d ", rowResult); */
+
+    /* if (threadIdx.y == 0 && blockIdx.y == 0) { */
+    /*   *result = localResult; */
+    /* } */
+    /* __syncthreads(); */
+
+    /* atomicExch((unsigned int*)result, (unsigned int)localResult); */
+    /* if (__syncthreads_or(rowResult)) { */
+    /*   *result = true; */
+    /*   /1* break; *1/ */
+    /* } */
+    /* __syncthreads(); */
+  /* } */
 }
 
