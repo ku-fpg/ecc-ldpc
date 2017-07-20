@@ -21,58 +21,79 @@ __device__ double signum(double x) {
   return x < 0 ? -1 : 1;
 }
 
+__device__ double atanh_(double x) {
+  if (x == 1 || x == -1) {
+    return signum(x) * 18.714973875118524;
+  } else {
+    return atanh(x);
+  }
+}
+
+__device__ int lamIndex(int i, int j, int sz, int rowCount, int colCount, int* offsets) {
+  int shift = (i/sz)*sz;
+  int off   = offsets[(j/sz)*colCount + i];
+  if (off > -1) {
+    return shift + ((off + j) % sz);
+  } else {
+    return -1;
+  }
+}
+
 // Arraylet matrix coordinates //
 extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
-  int r = blockDim.x * blockIdx.x + threadIdx.x;
-  int c = blockDim.y * blockIdx.y + threadIdx.y;
+  for (int i = 0; i < colCount; ++i) {
+    for (int j = 0; j < rowCount; ++j) {
+      if (offsets[(j/sz)*colCount + i] > -1) {
+        double prod = 1;
 
-  int stride = rowCount;
+        for (int k = 0; k < colCount; ++k) {
+          double v = mLet[(j*colCount) + k];
 
-  double prod = 1;
+          int lamIx = lamIndex(k, j, sz, rowCount, colCount, offsets);
+          if (k != i) {
+            if (lamIx > -1) {
+              prod *= tanh(- ((lam[lamIx] - v)/2));
+            }
+          }
+        }
 
-  if (offsets[c] != 0) {
-    for (int j = 0; j < colCount; ++j) {
-      double v = mLet[j*stride + r];
-      if (j != c) {
-        prod *= tanh(- ((lam[j] - v)/2));
+        newMLet[(j*colCount) + i] = -2*atanh_(prod);
       }
     }
   }
-
-  if (prod == 1 || prod == -1) {
-    newMLet[c*stride + r] = signum(prod) * 18.714973875118524;
-  } else {
-    newMLet[c*stride + r] = -2 * atanh(prod);
-  }
 }
 
 // Arraylet matrix coordinates //
-extern "C" __global__ void updateLam(double* newLam, double* newMLet, int rowCount, int colCount, int sz) {
-  int r = blockDim.x * blockIdx.x + threadIdx.x;
-  int c = blockDim.y * blockIdx.y + threadIdx.y;
-
-  atomicAdd(&newLam[r], newMLet[c*rowCount + r]);
+extern "C" __global__ void updateLam(double* newLam, double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
+  /* printf("(rowCount,colCount)=(%d,%d)\t",rowCount, colCount*sz); */
+    for (int i = 0; i < colCount; ++i) {
+  for (int j = 0; j < rowCount; ++j) {
+      newLam[lamIndex(i, j, sz, rowCount, colCount, offsets)] += newMLet[(j*colCount) + i];
+    }
+  }
 }
 
 __device__ bool hard(double v) {
-  return v > 0 ? 1 : 0;
+  return v > 0;
 }
 
 // lam vector coordinates //
-extern "C" __global__ void checkParity(bool* result, double* newMLet, double* lamPrime, int rowCount, int colCount) {
-  extern __shared__ int xored[];
-  /* int r = blockDim.x * blockIdx.x + threadIdx.x; */
-  int c = blockDim.x * blockIdx.x + threadIdx.x;
+extern "C" __global__ void checkParity(bool* result, double* mLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
+  *result = false;
 
-  bool hardLam = hard(lamPrime[c]);
-
-  xored[c] = 0;
-
+    for (int j = 0; j < rowCount; ++j) {
+    bool rowResult = false;
   for (int i = 0; i < colCount; ++i) {
-    xored[c] = xored[c] != (hardLam != hard(newMLet[c*rowCount + i]));
-  }
+      int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
 
-  /* int currAnsXored = __syncthreads_count(lamPrime[iPrime]>0) % 2; */
-  result[0] = __syncthreads_or(xored[c] ? 1 : 0);
+      if (lamIx > -1) {
+        rowResult = (rowResult != hard(lam[lamIx]));
+      }
+    }
+    if (rowResult) {
+      *result = true;
+      break;
+    }
+  }
 }
 

@@ -59,6 +59,7 @@ decoder ::
   CudaAllocations -> Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
   (mLet, offsets, rowCount, colCount) <- init'd
+  putStrLn $ "(nr, nc) = " ++ show (rowCount, colCount)
 
   cm      <- loadFile "cudabits/cached_mult.ptx"
   -- ldpcFun <- getFun cm "ldpc"
@@ -71,31 +72,36 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
 
   (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
   lam_dev <- newListArray $ U.toList $ orig_lam
+  -- putStrLn $ "orig_lam_len=" ++ show (orig_lam_len, U.length orig_lam)
 
   let go !iters
         | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
         | otherwise              = do
-            -- when (iters == 1) $ do lam <- peekListArray orig_lam_len lam_dev
-            --                        print (take 10 lam)
+            print iters
+            -- when True $ do lam <- peekListArray orig_lam_len lam_dev
+            --                print (take 10 lam)
 
             -- Check
             launchKernel checkParityFun
-                         (fromIntegral colCount, 1, 1)
-                         (1, 1, 1)
-                         (fromIntegral $ 8 * colCount)
+                         (1,1,1)
+                         (1,1,1)
+                         0 -- (fromIntegral $ 8 * colCount)
                          Nothing
                          [VArg parity_dev
-                         ,VArg newMLet
+                         ,VArg mLet
                          ,VArg lam_dev
                          ,IArg rowCount
                          ,IArg colCount
+                         ,IArg (fromIntegral sz)
+                         ,VArg offsets
                          ]
             [parity] <- peekListArray 1 parity_dev
 
-            unless parity $ do
+            when parity $ do
               -- Update matrix
               launchKernel tanhTransformFun
-                           (fromIntegral rowCount, fromIntegral colCount, 1)
+                           -- (fromIntegral rowCount, fromIntegral colCount, 1)
+                           (1,1,1)
                            (1,1,1)
                            0
                            Nothing
@@ -109,10 +115,12 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
                            ]
 
               copyArray orig_lam_len orig_lam_dev lam_dev
+              copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
 
               -- Update guess
               launchKernel updateLamFun
-                           (fromIntegral rowCount, fromIntegral colCount, 1)
+                           -- (fromIntegral rowCount, fromIntegral colCount, 1)
+                           (1,1,1)
                            (1,1,1)
                            0
                            Nothing
@@ -121,9 +129,15 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
                            ,IArg rowCount
                            ,IArg colCount
                            ,IArg (fromIntegral sz)
+                           ,VArg offsets
                            ]
 
-              copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
+              let debugCount = 60
+              -- offs <- peekListArray debugCount offsets
+              -- print offs
+              m <- peekListArray debugCount mLet
+              print m
+
               go (iters+1)
 
   go 0
@@ -183,6 +197,7 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
   where
     mLetRowCount = M.nrows qm*sz
     mLetColCount = M.ncols qm
+
     -- mLetRowCount = sz
     -- mLetColCount = (M.nrows qm * M.ncols qm) -- - fromIntegral zeroArrayletCount
 
@@ -212,9 +227,11 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
 
     offsets :: [IntT]
     offsets =
+      -- traceShowId $
       foldMap (\n ->
         case n of
-          0 -> [0]
+          0 -> [-1]
+          -- 0 -> [0]
           _ -> [g n]) $
       qm
 
