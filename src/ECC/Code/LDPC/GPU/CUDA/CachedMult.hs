@@ -58,16 +58,22 @@ decoder ::
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
   (mLet, offsets, rowCount, colCount) <- init'd
 
+  tanhMatrixFun    <- getFun cm "tanhMatrix"
+  tanhMultedFun    <- getFun cm "tanhMulted"
   tanhTransformFun <- getFun cm "tanhTransform"
   updateLamFun     <- getFun cm "updateLam"
   checkParityFun   <- getFun cm "checkParity"
 
   newMLet <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
+  -- tanhMat <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
 
   (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
   lam_dev <- newListArray $ U.toList $ orig_lam
   zeroArr <- newListArray [0] :: IO (DevicePtr Int)
   pop_dev <- newListArray [0] :: IO (DevicePtr Int)
+
+  -- worstVals_dev   <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Double)
+  -- multResults_dev <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Double)
 
   let go !iters
         | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
@@ -91,18 +97,49 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
             -- [parity] <- peekListArray 1 parity_dev
             [pop] <- peekListArray 1 pop_dev
             let parity = pop > 0
-
+--extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* lam, double* worstVals, double* tanhMultResults, int rowCount, int colCount, int sz, int* offsets) {
             when parity $ do
+              -- launchKernel tanhMatrixFun
+              --              (fromIntegral colCount, fromIntegral rowCount, 1)
+              --              (1,1,1)
+              --              0
+              --              Nothing
+              --              [VArg tanhMat
+              --              ,VArg mLet
+              --              ,VArg lam_dev
+              --              ,IArg rowCount
+              --              ,IArg colCount
+              --              ,IArg (fromIntegral sz)
+              --              ,VArg offsets
+              --              ]
+
+              -- launchKernel tanhMultedFun
+              --              (1, fromIntegral rowCount, 1)
+              --              (1,1,1)
+              --              0
+              --              Nothing
+              --              [VArg worstVals_dev
+              --              ,VArg multResults_dev
+              --              ,VArg tanhMat
+              --              ,VArg lam_dev
+              --              ,IArg rowCount
+              --              ,IArg colCount
+              --              ,IArg (fromIntegral sz)
+              --              ,VArg offsets
+              --              ]
+
               -- Update matrix
               launchKernel tanhTransformFun
-                           (fromIntegral colCount, fromIntegral rowCount, 1)
                            -- (1,1,1)
+                           (fromIntegral colCount, fromIntegral rowCount, 1)
                            (1,1,1)
                            0
                            Nothing
                            [VArg mLet
                            ,VArg newMLet
                            ,VArg lam_dev
+                           -- ,VArg worstVals_dev
+                           -- ,VArg multResults_dev
                            ,IArg rowCount
                            ,IArg colCount
                            ,IArg (fromIntegral sz)
@@ -144,6 +181,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
   free offsets
   free zeroArr
   free pop_dev
+  -- free tanhMat
 
   -- unload cm
 
