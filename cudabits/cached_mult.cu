@@ -30,7 +30,7 @@ __device__ double atanh_(double x) {
 }
 
 __device__ int lamIndex(int i, int j, int sz, int rowCount, int colCount, int* offsets) {
-  int shift = (i/sz)*sz;
+  int shift = i*sz;
   int off   = offsets[(j/sz)*colCount + i];
   if (off > -1) {
     return shift + ((off + j) % sz);
@@ -65,10 +65,12 @@ extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* 
 
 // Arraylet matrix coordinates //
 extern "C" __global__ void updateLam(double* newLam, double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
-  /* printf("(rowCount,colCount)=(%d,%d)\t",rowCount, colCount*sz); */
-    for (int i = 0; i < colCount; ++i) {
-  for (int j = 0; j < rowCount; ++j) {
-      newLam[lamIndex(i, j, sz, rowCount, colCount, offsets)] += newMLet[(j*colCount) + i];
+  for (int i = 0; i < colCount; ++i) {
+    for (int j = 0; j < rowCount; ++j) {
+      int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
+      if (lamIx > -1) {
+        newLam[lamIx] += newMLet[(j*colCount) + i];
+      }
     }
   }
 }
@@ -81,9 +83,9 @@ __device__ bool hard(double v) {
 extern "C" __global__ void checkParity(bool* result, double* mLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
   *result = false;
 
-    for (int j = 0; j < rowCount; ++j) {
+  for (int j = 0; j < rowCount; ++j) {
     bool rowResult = false;
-  for (int i = 0; i < colCount; ++i) {
+    for (int i = 0; i < colCount; ++i) {
       int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
 
       if (lamIx > -1) {

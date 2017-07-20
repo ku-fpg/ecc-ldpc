@@ -59,7 +59,6 @@ decoder ::
   CudaAllocations -> Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
   (mLet, offsets, rowCount, colCount) <- init'd
-  putStrLn $ "(nr, nc) = " ++ show (rowCount, colCount)
 
   cm      <- loadFile "cudabits/cached_mult.ptx"
   -- ldpcFun <- getFun cm "ldpc"
@@ -72,15 +71,10 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
 
   (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
   lam_dev <- newListArray $ U.toList $ orig_lam
-  -- putStrLn $ "orig_lam_len=" ++ show (orig_lam_len, U.length orig_lam)
 
   let go !iters
         | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
         | otherwise              = do
-            print iters
-            -- when True $ do lam <- peekListArray orig_lam_len lam_dev
-            --                print (take 10 lam)
-
             -- Check
             launchKernel checkParityFun
                          (1,1,1)
@@ -131,12 +125,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
                            ,IArg (fromIntegral sz)
                            ,VArg offsets
                            ]
-
-              let debugCount = 60
-              -- offs <- peekListArray debugCount offsets
-              -- print offs
-              m <- peekListArray debugCount mLet
-              print m
 
               go (iters+1)
 
