@@ -42,14 +42,12 @@ type IntT = Int32
 
 data CudaAllocations =
   CudaAllocations
-  { ldpcFun      :: Fun
-  , cm           :: Module
-  , ctx          :: Context
+  { cm           :: Module
   -- , result_dev   :: DevicePtr IntT
   -- , offsets      :: DevicePtr IntT
   -- , mLet         :: DevicePtr Double
-  -- , mLetRowCount :: IntT
-  -- , mLetColCount :: IntT
+  -- , rowCount :: IntT
+  -- , colCount :: IntT
   }
 
 code :: Code
@@ -60,18 +58,14 @@ decoder ::
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
   (mLet, offsets, rowCount, colCount) <- init'd
 
-  cm      <- loadFile "cudabits/cached_mult.ptx"
-  -- ldpcFun <- getFun cm "ldpc"
   tanhTransformFun <- getFun cm "tanhTransform"
   updateLamFun     <- getFun cm "updateLam"
   checkParityFun   <- getFun cm "checkParity"
 
   newMLet <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
-  parity_dev  <- mallocArray 1 :: IO (DevicePtr Bool)
 
   (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
   lam_dev <- newListArray $ U.toList $ orig_lam
-  falseArr <- newListArray [False]
   zeroArr <- newListArray [0] :: IO (DevicePtr Int)
   pop_dev <- newListArray [0] :: IO (DevicePtr Int)
 
@@ -79,7 +73,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
         | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
         | otherwise              = do
             -- Check
-            copyArray 1 falseArr parity_dev
             copyArray 1 zeroArr pop_dev
             launchKernel checkParityFun
                          (1,1,1)
@@ -148,8 +141,9 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
   free orig_lam_dev
   free mLet
   free newMLet
-  free parity_dev
   free offsets
+  free zeroArr
+  free pop_dev
 
   -- unload cm
 
@@ -163,15 +157,9 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
 
 initialize :: IO CudaAllocations
 initialize = do
-  -- CUDA.initialise []
-  -- dev0 <- device
-  -- dev0props <- CUDA.props dev0
-  -- print dev0props
-
-  -- cm      <- loadFile "cudabits/cached_mult.ptx"
-  -- ldpcFun <- getFun cm "ldpc"
-
-  -- ctx     <- create dev0 []
+  dummy <- mallocArray 1 :: IO (DevicePtr Int) -- Sets up CUDA context
+  cm    <- loadFile "cudabits/cached_mult.ptx"
+  free dummy
 
   return (CudaAllocations {..})
 
