@@ -102,8 +102,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
             when parity $ do
               -- Update matrix
               launchKernel tanhTransformFun
-                           -- (fromIntegral rowCount, fromIntegral colCount, 1)
-                           (1,1,1)
+                           (fromIntegral colCount, fromIntegral rowCount, 1)
+                           -- (1,1,1)
                            (1,1,1)
                            0
                            Nothing
@@ -121,8 +121,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
 
               -- Update guess
               launchKernel updateLamFun
-                           -- (fromIntegral rowCount, fromIntegral colCount, 1)
-                           (1,1,1)
+                           -- (1,1,1)
+                           (fromIntegral colCount, fromIntegral rowCount, 1)
                            (1,1,1)
                            0
                            Nothing

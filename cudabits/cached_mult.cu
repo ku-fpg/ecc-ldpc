@@ -41,8 +41,10 @@ __device__ int lamIndex(int i, int j, int sz, int rowCount, int colCount, int* o
 
 // Arraylet matrix coordinates //
 extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
-  for (int i = 0; i < colCount; ++i) {
-    for (int j = 0; j < rowCount; ++j) {
+  int i = blockIdx.x;
+  int j = blockIdx.y;
+  /* for (int i = 0; i < colCount; ++i) { */
+  /*   for (int j = 0; j < rowCount; ++j) { */
       if (offsets[(j/sz)*colCount + i] > -1) {
         double prod = 1;
 
@@ -59,20 +61,23 @@ extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* 
 
         newMLet[(j*colCount) + i] = -2*atanh_(prod);
       }
-    }
-  }
+    /* } */
+  /* } */
 }
 
 // Arraylet matrix coordinates //
 extern "C" __global__ void updateLam(double* newLam, double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
-  for (int i = 0; i < colCount; ++i) {
-    for (int j = 0; j < rowCount; ++j) {
+  int i = blockIdx.x;
+  int j = blockIdx.y;
+  /* for (int i = 0; i < colCount; ++i) { */
+  /*   for (int j = 0; j < rowCount; ++j) { */
       int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
       if (lamIx > -1) {
-        newLam[lamIx] += newMLet[(j*colCount) + i];
+        /* newLam[lamIx] += newMLet[(j*colCount) + i]; */
+        atomicAdd(&newLam[lamIx], newMLet[(j*colCount) + i]);
       }
-    }
-  }
+    /* } */
+  /* } */
 }
 
 __device__ bool hard(double v) {
@@ -81,44 +86,19 @@ __device__ bool hard(double v) {
 
 // lam vector coordinates //
 extern "C" __global__ void checkParity(int* pop, double* mLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
-  /* volatile __shared__ bool done; */
+  int startJ = threadIdx.y;
+  int j      = startJ;
 
-  /* if (threadIdx.x == 0 && blockIdx.x == 0) { */
-  /*   *result = false; */
-  /* } */
-  /* __syncthreads(); */
+  bool rowResult = false;
 
-  int startJ = threadIdx.y; //*(rowCount/blockDim.y);
-  int j = startJ;
-  /* int startI = blockIdx.x*(colCount/blockDim.x); */
+  for (int i = 0; i < colCount; ++i) {
+    int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
 
-  /* for (int j = startJ; j < startJ+(rowCount/blockDim.y); ++j) { */
-    bool rowResult = false;
-    for (int i = 0; i < colCount; ++i) {
-      int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
-
-      if (lamIx > -1) {
-        rowResult = (rowResult != hard(lam[lamIx]));
-      }
+    if (lamIx > -1) {
+      rowResult = (rowResult != hard(lam[lamIx]));
     }
+  }
 
-    atomicAdd(pop, (rowResult ? 1 : 0));
-
-    /* __syncthreads(); */
-    /* bool localResult = __any(rowResult); */
-    /* printf("%d ", rowResult); */
-
-    /* if (threadIdx.y == 0 && blockIdx.y == 0) { */
-    /*   *result = localResult; */
-    /* } */
-    /* __syncthreads(); */
-
-    /* atomicExch((unsigned int*)result, (unsigned int)localResult); */
-    /* if (__syncthreads_or(rowResult)) { */
-    /*   *result = true; */
-    /*   /1* break; *1/ */
-    /* } */
-    /* __syncthreads(); */
-  /* } */
+  atomicAdd(pop, (rowResult ? 1 : 0));
 }
 
