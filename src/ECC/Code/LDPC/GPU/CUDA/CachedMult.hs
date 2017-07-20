@@ -61,6 +61,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
   tanhMatrixFun    <- getFun cm "tanhMatrix"
   tanhMultedFun    <- getFun cm "tanhMulted"
   tanhTransformFun <- getFun cm "tanhTransform"
+  mapAtanhFun      <- getFun cm "mapAtanh"
   updateLamFun     <- getFun cm "updateLam"
   checkParityFun   <- getFun cm "checkParity"
 
@@ -129,7 +130,28 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
               --              ]
 
               -- Update matrix
+              memset newMLet (fromIntegral (colCount * rowCount)) 1
               launchKernel tanhTransformFun
+                           -- (1,1,1)
+                           (fromIntegral colCount, fromIntegral rowCount, 1)
+                           (fromIntegral colCount,1,1)
+                           0
+                           Nothing
+                           [VArg mLet
+                           ,VArg newMLet
+                           ,VArg lam_dev
+                           -- ,VArg worstVals_dev
+                           -- ,VArg multResults_dev
+                           ,IArg rowCount
+                           ,IArg colCount
+                           ,IArg (fromIntegral sz)
+                           ,VArg offsets
+                           ]
+
+              copyArray orig_lam_len orig_lam_dev lam_dev
+              copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
+
+              launchKernel mapAtanhFun
                            -- (1,1,1)
                            (fromIntegral colCount, fromIntegral rowCount, 1)
                            (1,1,1)
@@ -146,7 +168,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
                            ,VArg offsets
                            ]
 
-              copyArray orig_lam_len orig_lam_dev lam_dev
               copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
 
               -- Update guess
