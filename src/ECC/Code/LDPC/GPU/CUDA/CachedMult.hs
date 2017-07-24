@@ -58,23 +58,16 @@ decoder ::
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
   (mLet, offsets, rowCount, colCount) <- init'd
 
-  tanhMatrixFun    <- getFun cm "tanhMatrix"
-  tanhMultedFun    <- getFun cm "tanhMulted"
   tanhTransformFun <- getFun cm "tanhTransform"
-  mapAtanhFun      <- getFun cm "mapAtanh"
   updateLamFun     <- getFun cm "updateLam"
   checkParityFun   <- getFun cm "checkParity"
 
   newMLet <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
-  -- tanhMat <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
 
   (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
   lam_dev <- newListArray $ U.toList $ orig_lam
   zeroArr <- newListArray [0] :: IO (DevicePtr Int)
   pop_dev <- newListArray [0] :: IO (DevicePtr Int)
-
-  -- worstVals_dev   <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Double)
-  -- multResults_dev <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Double)
 
   let go !iters
         | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
@@ -83,9 +76,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
             copyArray 1 zeroArr pop_dev
             launchKernel checkParityFun
                          (1,1,1)
-                         -- (1,1,1)
                          (1, fromIntegral rowCount, 1)
-                         8 -- (fromIntegral $ 8 * colCount)
+                         8
                          Nothing
                          [VArg pop_dev
                          ,VArg mLet
@@ -95,53 +87,20 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
                          ,IArg (fromIntegral sz)
                          ,VArg offsets
                          ]
-            -- [parity] <- peekListArray 1 parity_dev
+
             [pop] <- peekListArray 1 pop_dev
             let parity = pop > 0
---extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* lam, double* worstVals, double* tanhMultResults, int rowCount, int colCount, int sz, int* offsets) {
+
             when parity $ do
-              -- launchKernel tanhMatrixFun
-              --              (fromIntegral colCount, fromIntegral rowCount, 1)
-              --              (1,1,1)
-              --              0
-              --              Nothing
-              --              [VArg tanhMat
-              --              ,VArg mLet
-              --              ,VArg lam_dev
-              --              ,IArg rowCount
-              --              ,IArg colCount
-              --              ,IArg (fromIntegral sz)
-              --              ,VArg offsets
-              --              ]
-
-              -- launchKernel tanhMultedFun
-              --              (1, fromIntegral rowCount, 1)
-              --              (1,1,1)
-              --              0
-              --              Nothing
-              --              [VArg worstVals_dev
-              --              ,VArg multResults_dev
-              --              ,VArg tanhMat
-              --              ,VArg lam_dev
-              --              ,IArg rowCount
-              --              ,IArg colCount
-              --              ,IArg (fromIntegral sz)
-              --              ,VArg offsets
-              --              ]
-
               -- Update matrix
-              memset newMLet (fromIntegral (colCount * rowCount)) 1
               launchKernel tanhTransformFun
-                           -- (1,1,1)
                            (fromIntegral colCount, fromIntegral rowCount, 1)
-                           (fromIntegral colCount,1,1)
+                           (1,1,1)
                            0
                            Nothing
                            [VArg mLet
                            ,VArg newMLet
                            ,VArg lam_dev
-                           -- ,VArg worstVals_dev
-                           -- ,VArg multResults_dev
                            ,IArg rowCount
                            ,IArg colCount
                            ,IArg (fromIntegral sz)
@@ -151,28 +110,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
               copyArray orig_lam_len orig_lam_dev lam_dev
               copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
 
-              launchKernel mapAtanhFun
-                           -- (1,1,1)
-                           (fromIntegral colCount, fromIntegral rowCount, 1)
-                           (1,1,1)
-                           0
-                           Nothing
-                           [VArg mLet
-                           ,VArg newMLet
-                           ,VArg lam_dev
-                           -- ,VArg worstVals_dev
-                           -- ,VArg multResults_dev
-                           ,IArg rowCount
-                           ,IArg colCount
-                           ,IArg (fromIntegral sz)
-                           ,VArg offsets
-                           ]
-
-              copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
-
               -- Update guess
               launchKernel updateLamFun
-                           -- (1,1,1)
                            (fromIntegral colCount, fromIntegral rowCount, 1)
                            (1,1,1)
                            0
@@ -189,8 +128,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
 
   go 0
 
-  -- launchKernel ldpcFun (orig_lam_len,1,1) (1,1,1) (orig_lam_len*8 + 16) Nothing [VArg mLet, IArg (fromIntegral sz), VArg offsets, IArg rowCount, IArg colCount, IArg (fromIntegral maxIterations), VArg orig_lam_dev, IArg (fromIntegral orig_lam_len), VArg result_dev]
-
   sync
 
   result <- peekListArray orig_lam_len lam_dev
@@ -202,17 +139,12 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
   free offsets
   free zeroArr
   free pop_dev
-  -- free tanhMat
 
   -- unload cm
 
   return $! Just $! U.map hard $! U.fromList result
   where
     init'd = initMatrixlet arr
-    toBool 0 = False
-    toBool _ = True
-    -- toBool 1 = True
-    -- toBool n = error $ "toBool: invalid arg: " ++ show n
 
 initialize :: IO CudaAllocations
 initialize = do
@@ -241,9 +173,6 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
     mLetRowCount = M.nrows qm*sz
     mLetColCount = M.ncols qm
 
-    -- mLetRowCount = sz
-    -- mLetColCount = (M.nrows qm * M.ncols qm) -- - fromIntegral zeroArrayletCount
-
     pop :: [Integer] -> Integer
     pop =
       getSum .
@@ -258,15 +187,6 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
         | x == 0        = error "got to zero; should never happen"
         | otherwise     = 1 + g (x `shiftR` 1)
 
-
-    -- zeroArrayletCount :: IntT
-    -- zeroArrayletCount =
-    --   getSum $
-    --   foldMap (\n ->
-    --     case n of
-    --       0 -> 1
-    --       _ -> 0) $
-    --   qm
 
     offsets :: [IntT]
     offsets =
