@@ -68,20 +68,34 @@ __device__ int lamIndex(int i, int j, int sz, int rowCount, int colCount, int* o
 extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.x;
   int j = blockIdx.y;
+
+  int k = threadIdx.x;
+
+  if (k == 0) {
+    newMLet[(j*colCount) + i] = 1;
+  }
+  __syncthreads();
+
   if (offsets[(j/sz)*colCount + i] > -1) {
-    double prod = 1;
+    double v = mLet[(j*colCount) + k];
 
-    for (int k = 0; k < colCount; ++k) {
-      double v = mLet[(j*colCount) + k];
-
-      int lamIx = lamIndex(k, j, sz, rowCount, colCount, offsets);
-      if (k != i) {
-        if (lamIx > -1) {
-          prod *= tanh(- ((lam[lamIx] - v)/2));
-        }
+    int lamIx = lamIndex(k, j, sz, rowCount, colCount, offsets);
+    if (k != i) {
+      if (lamIx > -1) {
+        atomicMul(&newMLet[(j*colCount) + i], tanh(- ((lam[lamIx] - v)/2)));
       }
     }
-    newMLet[(j*colCount) + i] = -2*atanh_(prod);
+  }
+}
+
+extern "C" __global__ void atanhTransform(double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
+  int i = blockIdx.x;
+  int j = blockIdx.y;
+
+  if (offsets[(j/sz)*colCount + i] > -1) {
+    newMLet[(j*colCount) + i] = -2*atanh_(newMLet[(j*colCount)+i]);
+  } else {
+    newMLet[(j*colCount) + i] = 0;
   }
 }
 

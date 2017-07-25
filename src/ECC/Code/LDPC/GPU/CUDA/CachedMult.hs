@@ -58,9 +58,10 @@ decoder ::
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
   (mLet, offsets, rowCount, colCount) <- init'd
 
-  tanhTransformFun <- getFun cm "tanhTransform"
-  updateLamFun     <- getFun cm "updateLam"
-  checkParityFun   <- getFun cm "checkParity"
+  tanhTransformFun  <- getFun cm "tanhTransform"
+  atanhTransformFun <- getFun cm "atanhTransform"
+  updateLamFun      <- getFun cm "updateLam"
+  checkParityFun    <- getFun cm "checkParity"
 
   newMLet <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
 
@@ -95,12 +96,24 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
               -- Update matrix
               launchKernel tanhTransformFun
                            (fromIntegral colCount, fromIntegral rowCount, 1)
-                           (1,1,1)
+                           (fromIntegral colCount,1,1)
                            0
                            Nothing
                            [VArg mLet
                            ,VArg newMLet
                            ,VArg lam_dev
+                           ,IArg rowCount
+                           ,IArg colCount
+                           ,IArg (fromIntegral sz)
+                           ,VArg offsets
+                           ]
+
+              launchKernel atanhTransformFun
+                           (fromIntegral colCount, fromIntegral rowCount, 1)
+                           (1,1,1)
+                           0
+                           Nothing
+                           [VArg newMLet
                            ,IArg rowCount
                            ,IArg colCount
                            ,IArg (fromIntegral sz)
