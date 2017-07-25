@@ -77,11 +77,11 @@ extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* 
   __syncthreads();
 
   if (offsets[(j/sz)*colCount + i] > -1) {
-    double v = mLet[(j*colCount) + k];
 
     int lamIx = lamIndex(k, j, sz, rowCount, colCount, offsets);
     if (k != i) {
       if (lamIx > -1) {
+        double v = mLet[(j*colCount) + k];
         atomicMul(&newMLet[(j*colCount) + i], tanh(- ((lam[lamIx] - v)/2)));
       }
     }

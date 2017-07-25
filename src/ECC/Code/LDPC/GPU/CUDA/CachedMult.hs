@@ -33,6 +33,8 @@ import qualified Foreign.CUDA.Driver.Device as CUDA
 import qualified Foreign.CUDA.Driver.Stream as Stream
 import Foreign.CUDA.Driver.Module
 
+import Data.IORef
+
 import GHC.Int
 
 import Control.DeepSeq
@@ -54,17 +56,39 @@ data CudaAllocations =
 code :: Code
 code = mkLDPC_CodeIO "cuda-arraylet-cm" E.encoder decoder initialize finalize
 
+
+                -- atomicWriteIORef tempRef mLet
+                -- atomicWriteIORef mLetRef newMLet
+                -- tempPtr <- readIORef tempRef
+                -- atomicWriteIORef newMLetRef tempPtr
+
+swapRefs :: IORef a -> IORef a -> IORef a -> IO ()
+swapRefs tempRef xRef yRef = do
+  x <- readIORef xRef
+  y <- readIORef yRef
+
+  atomicWriteIORef tempRef x
+  atomicWriteIORef xRef y
+
+  temp <- readIORef tempRef
+
+  atomicWriteIORef yRef temp
+
 decoder ::
   CudaAllocations -> Q.QuasiCyclic Integer -> IO (Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
-  (mLet, offsets, rowCount, colCount) <- init'd
+  (mLet0, offsets, rowCount, colCount) <- init'd
+
+  mLetRef <- newIORef mLet0
 
   tanhTransformFun  <- getFun cm "tanhTransform"
   atanhTransformFun <- getFun cm "atanhTransform"
   updateLamFun      <- getFun cm "updateLam"
   checkParityFun    <- getFun cm "checkParity"
 
-  newMLet <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
+  newMLet0 <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
+  newMLetRef <- newIORef newMLet0
+  tempRef <- newIORef =<< (mallocArray 1 :: IO (DevicePtr Double))
 
   return $ \rate maxIterations orig_lam -> do
     (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
@@ -72,11 +96,14 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
     zeroArr <- newListArray [0] :: IO (DevicePtr Int)
     pop_dev <- newListArray [0] :: IO (DevicePtr Int)
 
-    memset mLet (fromIntegral $ rowCount * colCount * 8) 0
+    mLet' <- readIORef mLetRef
+    memset mLet' (fromIntegral $ rowCount * colCount * 8) 0
 
     let go !iters
           | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
           | otherwise              = do
+              mLet <- readIORef mLetRef
+              newMLet <- readIORef newMLetRef
               -- Check
               copyArray 1 zeroArr pop_dev
               launchKernel checkParityFun
@@ -99,7 +126,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 -- Update matrix
                 launchKernel tanhTransformFun
                              (fromIntegral colCount, fromIntegral rowCount, 1)
-                             (fromIntegral colCount,1,1)
+                             (fromIntegral colCount, 1, 1)
                              0
                              Nothing
                              [VArg mLet
@@ -124,7 +151,9 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ]
 
                 copyArray orig_lam_len orig_lam_dev lam_dev
-                copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
+                -- copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
+
+                swapRefs tempRef mLetRef newMLetRef
 
                 -- Update guess
                 launchKernel updateLamFun
