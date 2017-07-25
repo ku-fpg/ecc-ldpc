@@ -37,7 +37,13 @@ __device__ double atomicMul(double* address, double val)
 
 
 __device__ double signum(double x) {
-  return x < 0 ? -1 : 1;
+  if (x < 0) {
+    return -1;
+  } else if (x > 0) {
+    return 1;
+  } else {
+    return 0;
+  }
 }
 
 __device__ double atanh_(double x) {

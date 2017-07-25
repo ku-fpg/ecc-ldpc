@@ -165,7 +165,7 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
   mLetPtr    <- mallocArray (mLetRowCount * mLetColCount)
   offsetsPtr <- newListArray offsets
 
-  memset mLetPtr (fromIntegral (mLetRowCount * mLetColCount)) 0
+  memset mLetPtr (fromIntegral (mLetRowCount * mLetColCount * 8)) 0
 
   return (mLetPtr, offsetsPtr, fromIntegral mLetRowCount, fromIntegral mLetColCount)
 
