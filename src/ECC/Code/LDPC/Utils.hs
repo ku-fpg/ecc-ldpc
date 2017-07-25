@@ -24,7 +24,7 @@ mkLDPC :: (MatrixLoader g, MatrixLoader h)
        -> Int
        -> Maybe (Ratio Int)
        -> (g -> Rate -> U.Vector Bool -> U.Vector Bool)
-       -> (h -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
+       -> (h -> IO (Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))))
        -> IO (ECC IO)
 mkLDPC prefix codeName maxI optRate encoder decoder0 = do
    g <- loadMatrix (codeName ++ "/G") -- with G, we prepend the identity
@@ -44,7 +44,8 @@ mkLDPC prefix codeName maxI optRate encoder decoder0 = do
    let c_length = (m_length * denominator rate) `div` numerator rate
    print $ c_length
    let encoder' = encoder g rate
-   let decoder' = decoder0 h rate maxI
+   decoder1 <- decoder0 h
+   let decoder' = decoder1 rate maxI
    let unpuncture xs = U.take c_length xs `mappend` U.replicate (getNCols h - c_length) 0
    return $ ECC
         { name     = "ldpc/" ++ prefix ++ "/" ++ codeName ++ "/" ++ show maxI ++ "/" ++ show (numerator rate) ++ "/" ++  show (denominator rate)
@@ -66,16 +67,16 @@ mkLDPC_Code :: (MatrixLoader g, MatrixLoader h)
 mkLDPC_Code name encoder decoder = Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/codeword/message]"] (pure ()) (const (pure ()))
      $ \ vars xs -> case xs of
                 ["ldpc",nm,m,n,x,y] | nm == name && all isDigit n && all isDigit x && all isDigit y
-                   -> fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder decoder'
+                   -> fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder (pure . decoder')
                 ["ldpc",nm,m,n] | nm == name && all isDigit n
-                   -> fmap (: []) $ mkLDPC name m (read n) Nothing encoder decoder'
+                   -> fmap (: []) $ mkLDPC name m (read n) Nothing encoder (pure . decoder')
                 _  -> return []
       where decoder' h = \x y z -> pure $ decoder h x y z
 
 mkLDPC_CodeIO :: (MatrixLoader g, MatrixLoader h)
             => String
             -> (g -> Rate -> U.Vector Bool -> U.Vector Bool)
-            -> (vars -> h -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
+            -> (vars -> h -> IO (Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))))
             -> IO vars
             -> (vars -> IO ())
             -> Code

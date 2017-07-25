@@ -115,7 +115,7 @@ __device__ bool hard(double v) {
 }
 
 // lam vector coordinates //
-extern "C" __global__ void checkParity(int* pop, double* mLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
+extern "C" __global__ void checkParity(int* pop, double* lam, int rowCount, int colCount, int sz, int* offsets) {
   int startJ = threadIdx.y;
   int j      = startJ;
 

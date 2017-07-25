@@ -30,6 +30,7 @@ import Foreign.CUDA.Types
 import Foreign.CUDA.Driver.Context.Base
 import Foreign.CUDA.Driver.Exec
 import qualified Foreign.CUDA.Driver.Device as CUDA
+import qualified Foreign.CUDA.Driver.Stream as Stream
 import Foreign.CUDA.Driver.Module
 
 import GHC.Int
@@ -54,8 +55,8 @@ code :: Code
 code = mkLDPC_CodeIO "cuda-arraylet-cm" E.encoder decoder initialize finalize
 
 decoder ::
-  CudaAllocations -> Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))
-decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam  = do
+  CudaAllocations -> Q.QuasiCyclic Integer -> IO (Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
+decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   (mLet, offsets, rowCount, colCount) <- init'd
 
   tanhTransformFun  <- getFun cm "tanhTransform"
@@ -65,42 +66,25 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
 
   newMLet <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
 
-  (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
-  lam_dev <- newListArray $ U.toList $ orig_lam
-  zeroArr <- newListArray [0] :: IO (DevicePtr Int)
-  pop_dev <- newListArray [0] :: IO (DevicePtr Int)
+  return $ \rate maxIterations orig_lam -> do
+    (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
+    lam_dev <- newListArray $ U.toList $ orig_lam
+    zeroArr <- newListArray [0] :: IO (DevicePtr Int)
+    pop_dev <- newListArray [0] :: IO (DevicePtr Int)
 
-  let go !iters
-        | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
-        | otherwise              = do
-            -- Check
-            copyArray 1 zeroArr pop_dev
-            launchKernel checkParityFun
-                         (1,1,1)
-                         (1, fromIntegral rowCount, 1)
-                         8
-                         Nothing
-                         [VArg pop_dev
-                         ,VArg mLet
-                         ,VArg lam_dev
-                         ,IArg rowCount
-                         ,IArg colCount
-                         ,IArg (fromIntegral sz)
-                         ,VArg offsets
-                         ]
+    memset mLet (fromIntegral $ rowCount * colCount * 8) 0
 
-            [pop] <- peekListArray 1 pop_dev
-            let parity = pop > 0
-
-            when parity $ do
-              -- Update matrix
-              launchKernel tanhTransformFun
-                           (fromIntegral colCount, fromIntegral rowCount, 1)
-                           (fromIntegral colCount,1,1)
-                           0
+    let go !iters
+          | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
+          | otherwise              = do
+              -- Check
+              copyArray 1 zeroArr pop_dev
+              launchKernel checkParityFun
+                           (1,1,1)
+                           (1, fromIntegral rowCount, 1)
+                           8
                            Nothing
-                           [VArg mLet
-                           ,VArg newMLet
+                           [VArg pop_dev
                            ,VArg lam_dev
                            ,IArg rowCount
                            ,IArg colCount
@@ -108,54 +92,73 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) rate maxIterations orig_lam
                            ,VArg offsets
                            ]
 
-              launchKernel atanhTransformFun
-                           (fromIntegral colCount, fromIntegral rowCount, 1)
-                           (1,1,1)
-                           0
-                           Nothing
-                           [VArg newMLet
-                           ,IArg rowCount
-                           ,IArg colCount
-                           ,IArg (fromIntegral sz)
-                           ,VArg offsets
-                           ]
+              [pop] <- peekListArray 1 pop_dev
+              let parity = pop > 0
 
-              copyArray orig_lam_len orig_lam_dev lam_dev
-              copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
+              when parity $ do
+                -- Update matrix
+                launchKernel tanhTransformFun
+                             (fromIntegral colCount, fromIntegral rowCount, 1)
+                             (fromIntegral colCount,1,1)
+                             0
+                             Nothing
+                             [VArg mLet
+                             ,VArg newMLet
+                             ,VArg lam_dev
+                             ,IArg rowCount
+                             ,IArg colCount
+                             ,IArg (fromIntegral sz)
+                             ,VArg offsets
+                             ]
 
-              -- Update guess
-              launchKernel updateLamFun
-                           (fromIntegral colCount, fromIntegral rowCount, 1)
-                           (1,1,1)
-                           0
-                           Nothing
-                           [VArg lam_dev
-                           ,VArg newMLet
-                           ,IArg rowCount
-                           ,IArg colCount
-                           ,IArg (fromIntegral sz)
-                           ,VArg offsets
-                           ]
+                launchKernel atanhTransformFun
+                             (fromIntegral colCount, fromIntegral rowCount, 1)
+                             (1,1,1)
+                             0
+                             Nothing
+                             [VArg newMLet
+                             ,IArg rowCount
+                             ,IArg colCount
+                             ,IArg (fromIntegral sz)
+                             ,VArg offsets
+                             ]
 
-              go (iters+1)
+                copyArray orig_lam_len orig_lam_dev lam_dev
+                copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
 
-  go 0
+                -- Update guess
+                launchKernel updateLamFun
+                             (fromIntegral colCount, fromIntegral rowCount, 1)
+                             (1,1,1)
+                             0
+                             Nothing
+                             [VArg lam_dev
+                             ,VArg newMLet
+                             ,IArg rowCount
+                             ,IArg colCount
+                             ,IArg (fromIntegral sz)
+                             ,VArg offsets
+                             ]
 
-  sync
+                go (iters+1)
 
-  result <- peekListArray orig_lam_len lam_dev
+    go 0
 
-  free lam_dev
-  free orig_lam_dev
-  free mLet
-  free newMLet
-  free offsets
-  free zeroArr
-  free pop_dev
+    sync
 
-  -- unload cm
+    result <- peekListArray orig_lam_len lam_dev
 
-  return $! Just $! U.map hard $! U.fromList result
+    free lam_dev
+    free orig_lam_dev
+    -- free mLet
+    -- free newMLet
+    -- free offsets
+    -- free zeroArr
+    -- free pop_dev
+
+    -- unload cm
+
+    return $! Just $! U.map hard $! U.fromList result
   where
     init'd = initMatrixlet arr
 
