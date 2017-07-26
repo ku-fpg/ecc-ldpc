@@ -69,20 +69,22 @@ extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* 
   int i = blockIdx.x;
   int j = blockIdx.y;
 
-  int k = threadIdx.x;
+  int kStart = threadIdx.x*(colCount/blockDim.x);
 
-  if (k == 0) {
+  if (kStart == 0) {
     newMLet[(j*colCount) + i] = 1;
   }
   __syncthreads();
 
   if (offsets[(j/sz)*colCount + i] > -1) {
+    for (int k = kStart; k < (threadIdx.x+1)*(colCount/blockDim.x); ++k) {
 
-    int lamIx = lamIndex(k, j, sz, rowCount, colCount, offsets);
-    if (k != i) {
-      if (lamIx > -1) {
-        double v = mLet[(j*colCount) + k];
-        atomicMul(&newMLet[(j*colCount) + i], tanh(- ((lam[lamIx] - v)/2)));
+      int lamIx = lamIndex(k, j, sz, rowCount, colCount, offsets);
+      if (k != i) {
+        if (lamIx > -1) {
+          double v = mLet[(j*colCount) + k];
+          atomicMul(&newMLet[(j*colCount) + i], tanh(- ((lam[lamIx] - v)/2)));
+        }
       }
     }
   }
