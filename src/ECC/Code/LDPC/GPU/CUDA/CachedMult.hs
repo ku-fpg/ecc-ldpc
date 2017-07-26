@@ -24,7 +24,7 @@ import qualified ECC.Code.LDPC.Fast.Encoder as E
 import Data.Monoid
 
 -- import Foreign.CUDA hiding (launchKernel)
-import Foreign.CUDA.Runtime.Marshal
+import           Foreign.CUDA.Runtime.Marshal as RM
 import Foreign.CUDA.Types
 -- import qualified Foreign.CUDA.Driver as CUDA
 import Foreign.CUDA.Driver.Context.Base
@@ -79,28 +79,37 @@ decoder ::
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   (mLet0, offsets, rowCount, colCount) <- init'd
 
-  mLetRef <- newIORef mLet0
-
   tanhTransformFun  <- getFun cm "tanhTransform"
   atanhTransformFun <- getFun cm "atanhTransform"
   updateLamFun      <- getFun cm "updateLam"
   checkParityFun    <- getFun cm "checkParity"
 
-  newMLet0 <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
+  memset mLet0 (fromIntegral (rowCount * colCount * 8)) 0
+
+  mLetRef <- newIORef mLet0
+
+  newMLet0   <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Double)
   newMLetRef <- newIORef newMLet0
-  tempRef <- newIORef =<< (mallocArray 1 :: IO (DevicePtr Double))
+  tempRef    <- newIORef =<< (mallocArray 1 :: IO (DevicePtr Double))
+
+
 
   return $ \rate maxIterations orig_lam -> do
-    (orig_lam_dev, orig_lam_len) <- newListArrayLen $ U.toList $ orig_lam
+    let orig_lam_list = U.toList orig_lam
+    (orig_lam_dev, orig_lam_len) <- newListArrayLen orig_lam_list
+
     lam_dev <- newListArray $ U.toList $ orig_lam
+
     zeroArr <- newListArray [0] :: IO (DevicePtr Int)
     pop_dev <- newListArray [0] :: IO (DevicePtr Int)
+
+    lamResultRef <- newIORef lam_dev
 
     mLet' <- readIORef mLetRef
     memset mLet' (fromIntegral $ rowCount * colCount * 8) 0
 
     let go !iters
-          | iters >= maxIterations = copyArray orig_lam_len orig_lam_dev lam_dev
+          | iters >= maxIterations = writeIORef lamResultRef orig_lam_dev
           | otherwise              = do
               mLet <- readIORef mLetRef
               newMLet <- readIORef newMLetRef
@@ -122,11 +131,13 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
               [pop] <- peekListArray 1 pop_dev
               let parity = pop > 0
 
+              writeIORef lamResultRef lam_dev
+
               when parity $ do
                 -- Update matrix
                 launchKernel tanhTransformFun
                              (fromIntegral colCount, fromIntegral rowCount, 1)
-                             (fromIntegral colCount, 1, 1)
+                             (fromIntegral (colCount `div` 2), 1, 1)
                              0
                              Nothing
                              [VArg mLet
@@ -150,12 +161,12 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,VArg offsets
                              ]
 
-                copyArray orig_lam_len orig_lam_dev lam_dev
-                -- copyArray (fromIntegral $ rowCount * colCount) newMLet mLet
-
                 swapRefs tempRef mLetRef newMLetRef
 
                 -- Update guess
+
+                copyArray orig_lam_len orig_lam_dev lam_dev
+
                 launchKernel updateLamFun
                              (fromIntegral colCount, fromIntegral rowCount, 1)
                              (1,1,1)
@@ -175,10 +186,13 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
     sync
 
-    result <- peekListArray orig_lam_len lam_dev
+    lamPtr <- readIORef lamResultRef
+    result <- peekListArray orig_lam_len lamPtr
 
-    free lam_dev
+    let r = Just $! U.map hard $! S.convert $! U.fromList result
+
     free orig_lam_dev
+
     -- free mLet
     -- free newMLet
     -- free offsets
@@ -187,15 +201,15 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
     -- unload cm
 
-    return $! Just $! U.map hard $! U.fromList result
+    return $! r
   where
     init'd = initMatrixlet arr
 
 initialize :: IO CudaAllocations
 initialize = do
-  dummy <- mallocArray 1 :: IO (DevicePtr Int) -- Sets up CUDA context
+  dummy <- RM.mallocArray 1 :: IO (DevicePtr Int) -- Sets up CUDA context
   cm    <- loadFile "cudabits/cached_mult.ptx"
-  free dummy
+  RM.free dummy
 
   return (CudaAllocations {..})
 
@@ -208,9 +222,10 @@ finalize CudaAllocations {..} = do
 initMatrixlet :: Q.QuasiCyclic Integer -> IO (DevicePtr Double, DevicePtr IntT, IntT, IntT)
 initMatrixlet (Q.QuasiCyclic sz qm) = do
   mLetPtr    <- mallocArray (mLetRowCount * mLetColCount)
+  -- mLetPtr    <- mallocManagedArray [CuMemAttachHost] (mLetRowCount * mLetColCount)
   offsetsPtr <- newListArray offsets
 
-  memset mLetPtr (fromIntegral (mLetRowCount * mLetColCount * 8)) 0
+  -- memset mLetPtr (fromIntegral (mLetRowCount * mLetColCount * 8)) 0
 
   return (mLetPtr, offsetsPtr, fromIntegral mLetRowCount, fromIntegral mLetColCount)
 
