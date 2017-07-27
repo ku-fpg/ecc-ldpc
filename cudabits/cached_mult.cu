@@ -169,11 +169,6 @@ extern "C" __global__ void checkParity(int* pop, double* lam, int rowCount, int 
 
   bool rowResult = false;
 
-  if (startJ == 0) {
-    *pop = 0;
-  }
-  __syncthreads();
-
   for (int i = 0; i < colCount; ++i) {
     int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
 

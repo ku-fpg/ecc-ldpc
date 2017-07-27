@@ -169,7 +169,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 -- count divisible by 8.
                 launchKernel selfProductFun
                              (fromIntegral colCount, 1, 1)
-                             (fromIntegral (colCount `div` 4), fromIntegral (rowCount `div` 8), 1)
+                             -- (fromIntegral (colCount `div` 4), fromIntegral (rowCount `div` 8), 1)
+                             (fromIntegral (colCount `div` 11), fromIntegral (rowCount `div` 2), 1)
                              0
                              Nothing
                              [VArg mLet
