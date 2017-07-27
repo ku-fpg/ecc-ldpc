@@ -64,17 +64,39 @@ __device__ int lamIndex(int i, int j, int sz, int rowCount, int colCount, int* o
   }
 }
 
+extern "C" __global__ void tanhTransform(double* mLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
+  int i = blockIdx.x;
+  int j = blockIdx.y;
+
+  int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
+  if (lamIx > -1) {
+    double v = mLet[(j*colCount) + i];
+    mLet[(j*colCount) + i] = tanh(- ((lam[lamIx] - v)/2));
+  }
+}
+
+extern "C" __global__ void setToOne(double* mLet, int rowCount, int colCount, int sz, int* offsets) {
+  int i = blockIdx.x;
+  int j = blockIdx.y;
+
+  int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
+  if (lamIx > -1) {
+    mLet[(j*colCount) + i] = 1;
+  }
+}
+
 // Arraylet matrix coordinates //
-extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* lam, int rowCount, int colCount, int sz, int* offsets) {
+extern "C" __global__ void selfProduct(double* mLet, double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.x;
   int j = blockIdx.y;
 
   int kStart = threadIdx.x*(colCount/blockDim.x);
+  double prod = 1;
 
-  if (kStart == 0) {
-    newMLet[(j*colCount) + i] = 1;
-  }
-  __syncthreads();
+  /* if (kStart == 0) { */
+  /*   newMLet[(j*colCount) + i] = 1; */
+  /* } */
+  /* __syncthreads(); */
 
   if (offsets[(j/sz)*colCount + i] > -1) {
     for (int k = kStart; k < (threadIdx.x+1)*(colCount/blockDim.x); ++k) {
@@ -82,11 +104,13 @@ extern "C" __global__ void tanhTransform(double* mLet, double* newMLet, double* 
       int lamIx = lamIndex(k, j, sz, rowCount, colCount, offsets);
       if (k != i) {
         if (lamIx > -1) {
-          double v = mLet[(j*colCount) + k];
-          atomicMul(&newMLet[(j*colCount) + i], tanh(- ((lam[lamIx] - v)/2)));
+          /* atomicMul(&newMLet[(j*colCount) + i], mLet[(j*colCount) + k]); */
+          prod *= mLet[(j*colCount) + k];
         }
       }
     }
+
+    atomicMul(&newMLet[(j*colCount) + i], prod);
   }
 }
 

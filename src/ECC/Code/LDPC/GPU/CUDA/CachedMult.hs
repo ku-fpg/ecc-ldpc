@@ -80,6 +80,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   (mLet0, offsets, rowCount, colCount) <- init'd
 
   tanhTransformFun  <- getFun cm "tanhTransform"
+  setToOneFun       <- getFun cm "setToOne"
+  selfProductFun    <- getFun cm "selfProduct"
   atanhTransformFun <- getFun cm "atanhTransform"
   updateLamFun      <- getFun cm "updateLam"
   checkParityFun    <- getFun cm "checkParity"
@@ -108,6 +110,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
     mLet' <- readIORef mLetRef
     memset mLet' (fromIntegral $ rowCount * colCount * 8) 0
 
+    stream1 <- Stream.create []
+
     let go !iters
           | iters >= maxIterations = writeIORef lamResultRef orig_lam_dev
           | otherwise              = do
@@ -135,14 +139,39 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
               when parity $ do
                 -- Update matrix
+                launchKernel setToOneFun
+                             (fromIntegral colCount, fromIntegral rowCount, 1)
+                             (1, 1, 1)
+                             0
+                             (Just stream1)
+                             [VArg newMLet
+                             ,IArg rowCount
+                             ,IArg colCount
+                             ,IArg (fromIntegral sz)
+                             ,VArg offsets
+                             ]
                 launchKernel tanhTransformFun
                              (fromIntegral colCount, fromIntegral rowCount, 1)
-                             (fromIntegral (colCount `div` 2), 1, 1)
+                             (1, 1, 1)
+                             0
+                             Nothing
+                             [VArg mLet
+                             ,VArg lam_dev
+                             ,IArg rowCount
+                             ,IArg colCount
+                             ,IArg (fromIntegral sz)
+                             ,VArg offsets
+                             ]
+                Stream.block stream1
+                -- NOTE: Assumes column count is divisible by 4
+                launchKernel selfProductFun
+                             (fromIntegral colCount, fromIntegral rowCount, 1)
+                             (fromIntegral (colCount `div` 4), 1, 1)
                              0
                              Nothing
                              [VArg mLet
                              ,VArg newMLet
-                             ,VArg lam_dev
+                             -- ,VArg lam_dev
                              ,IArg rowCount
                              ,IArg colCount
                              ,IArg (fromIntegral sz)
@@ -183,8 +212,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 go (iters+1)
 
     go 0
-
-    sync
 
     lamPtr <- readIORef lamResultRef
     result <- peekListArray orig_lam_len lamPtr
