@@ -102,8 +102,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
     lam_dev <- newListArray $ U.toList $ orig_lam
 
-    zeroArr <- newListArray [0] :: IO (DevicePtr Int)
-    pop_dev <- newListArray [0] :: IO (DevicePtr Int)
+    -- zeroArr <- newListArray [0] :: IO (DevicePtr Int)
+    pop_dev <- newListArray [0] :: IO (DevicePtr Int32)
 
     lamResultRef <- newIORef lam_dev
 
@@ -118,7 +118,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
               mLet <- readIORef mLetRef
               newMLet <- readIORef newMLetRef
               -- Check
-              copyArray 1 zeroArr pop_dev
+              -- copyArray 1 zeroArr pop_dev
+              -- memset pop_dev 4 0
               launchKernel checkParityFun
                            (1,1,1)
                            (1, fromIntegral rowCount, 1)
@@ -163,7 +164,9 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,VArg offsets
                              ]
                 Stream.block stream1
-                -- NOTE: Assumes column count is divisible by 4
+
+                -- NOTE: Assumes column count is divisible by 4 and row
+                -- count divisible by 8.
                 launchKernel selfProductFun
                              (fromIntegral colCount, 1, 1)
                              (fromIntegral (colCount `div` 4), fromIntegral (rowCount `div` 8), 1)

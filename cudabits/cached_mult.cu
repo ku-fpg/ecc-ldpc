@@ -34,6 +34,21 @@ __device__ double atomicMul(double* address, double val)
 
     return __longlong_as_double(old);
 }
+__device__ double atomicAssign(double* address, double val)
+{
+    unsigned long long int* address_as_ull =
+                              (unsigned long long int*)address;
+    unsigned long long int old = *address_as_ull, assumed;
+
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_ull, assumed, val);
+
+    // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN)
+    } while (assumed != old);
+
+    return __longlong_as_double(old);
+}
 
 
 __device__ double signum(double x) {
@@ -85,17 +100,22 @@ extern "C" __global__ void setToOne(double* mLet, int rowCount, int colCount, in
   }
 }
 
+extern "C" __global__ void setToZero(double* mLet, int rowCount, int colCount, int sz, int* offsets) {
+  int i = blockIdx.x;
+  int j = threadIdx.y;
+
+  int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
+  if (lamIx > -1) {
+    mLet[(j*colCount) + i] = 1;
+  }
+}
+
 // Arraylet matrix coordinates //
 extern "C" __global__ void selfProduct(double* mLet, double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.x;
   int jStart = threadIdx.y*(rowCount/blockDim.y);
 
   int kStart = threadIdx.x*(colCount/blockDim.x);
-
-  /* if (kStart == 0) { */
-  /*   newMLet[(j*colCount) + i] = 1; */
-  /* } */
-  /* __syncthreads(); */
 
   for (int j = jStart; j < (threadIdx.y+1)*(rowCount/blockDim.y); ++j) {
     double prod = 1;
@@ -148,6 +168,11 @@ extern "C" __global__ void checkParity(int* pop, double* lam, int rowCount, int 
   int j      = startJ;
 
   bool rowResult = false;
+
+  if (startJ == 0) {
+    *pop = 0;
+  }
+  __syncthreads();
 
   for (int i = 0; i < colCount; ++i) {
     int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
