@@ -165,8 +165,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ]
                 Stream.block stream1
 
-                -- NOTE: Assumes column count is divisible by 4 and row
-                -- count divisible by 8.
+                -- NOTE: Assumes column count is divisible by 11 and row
+                -- count divisible by 2.
                 launchKernel selfProductFun
                              (fromIntegral colCount, 1, 1)
                              -- (fromIntegral (colCount `div` 4), fromIntegral (rowCount `div` 8), 1)
