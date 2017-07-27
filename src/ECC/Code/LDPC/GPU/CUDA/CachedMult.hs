@@ -140,8 +140,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
               when parity $ do
                 -- Update matrix
                 launchKernel setToOneFun
-                             (fromIntegral colCount, fromIntegral rowCount, 1)
-                             (1, 1, 1)
+                             (fromIntegral colCount, 1, 1)
+                             (1, fromIntegral rowCount, 1)
                              0
                              (Just stream1)
                              [VArg newMLet
@@ -151,8 +151,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,VArg offsets
                              ]
                 launchKernel tanhTransformFun
-                             (fromIntegral colCount, fromIntegral rowCount, 1)
-                             (1, 1, 1)
+                             (fromIntegral colCount, 1, 1)
+                             (1, fromIntegral rowCount, 1)
                              0
                              Nothing
                              [VArg mLet
@@ -165,8 +165,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 Stream.block stream1
                 -- NOTE: Assumes column count is divisible by 4
                 launchKernel selfProductFun
-                             (fromIntegral colCount, fromIntegral rowCount, 1)
-                             (fromIntegral (colCount `div` 4), 1, 1)
+                             (fromIntegral colCount, 1, 1)
+                             (fromIntegral (colCount `div` 4), fromIntegral (rowCount `div` 8), 1)
                              0
                              Nothing
                              [VArg mLet
@@ -179,8 +179,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ]
 
                 launchKernel atanhTransformFun
-                             (fromIntegral colCount, fromIntegral rowCount, 1)
-                             (1,1,1)
+                             (fromIntegral colCount, 1, 1)
+                             (1,fromIntegral rowCount,1)
                              0
                              Nothing
                              [VArg newMLet
@@ -197,8 +197,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 copyArray orig_lam_len orig_lam_dev lam_dev
 
                 launchKernel updateLamFun
-                             (fromIntegral colCount, fromIntegral rowCount, 1)
-                             (1,1,1)
+                             (fromIntegral colCount, 1, 1)
+                             (1,fromIntegral rowCount,1)
                              0
                              Nothing
                              [VArg lam_dev
