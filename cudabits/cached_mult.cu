@@ -182,6 +182,6 @@ extern "C" __global__ void checkParity(int* pop, double* lam, int rowCount, int 
     }
   }
 
-  atomicAdd(pop, (rowResult ? 1 : 0));
+  *pop = __syncthreads_or(rowResult);
 }
 
