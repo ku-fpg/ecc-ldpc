@@ -84,6 +84,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   selfProductFun    <- getFun cm "selfProduct"
   atanhTransformFun <- getFun cm "atanhTransform"
   updateLamFun      <- getFun cm "updateLam"
+  parityRowResultsFun <- getFun cm "parityRowResults"
   checkParityFun    <- getFun cm "checkParity"
 
   memset mLet0 (fromIntegral (rowCount * colCount * 8)) 0
@@ -94,6 +95,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   newMLetRef <- newIORef newMLet0
   tempRef    <- newIORef =<< (mallocArray 1 :: IO (DevicePtr Double))
 
+  rowResults <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Bool)
 
 
   return $ \rate maxIterations orig_lam -> do
@@ -120,17 +122,26 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
               -- Check
               -- copyArray 1 zeroArr pop_dev
               -- memset pop_dev 4 0
+              launchKernel parityRowResultsFun
+                           (1, fromIntegral rowCount, 1)
+                           (fromIntegral colCount,1,1)
+                           8
+                           Nothing
+                           [VArg rowResults
+                           ,VArg lam_dev
+                           ,IArg rowCount
+                           ,IArg colCount
+                           ,IArg (fromIntegral sz)
+                           ,VArg offsets
+                           ]
+
               launchKernel checkParityFun
                            (1,1,1)
                            (1, fromIntegral rowCount, 1)
                            8
                            Nothing
                            [VArg pop_dev
-                           ,VArg lam_dev
-                           ,IArg rowCount
-                           ,IArg colCount
-                           ,IArg (fromIntegral sz)
-                           ,VArg offsets
+                           ,VArg rowResults
                            ]
 
               [pop] <- peekListArray 1 pop_dev

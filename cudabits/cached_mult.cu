@@ -162,21 +162,25 @@ __device__ bool hard(double v) {
   return v > 0;
 }
 
+extern "C" __global__ void parityRowResults(bool* rowResults, double* lam, int rowCount, int colCount, int sz, int* offsets) {
+  int startI = threadIdx.x;
+  int i      = startI;
+  int j      = blockIdx.y;
+
+  int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
+
+  int count = __syncthreads_count(lamIx != -1 && hard(lam[lamIx]));
+
+  if (i == 0) {
+    rowResults[j] = count % 2 == 1;
+  }
+}
+
 // lam vector coordinates //
-extern "C" __global__ void checkParity(int* pop, double* lam, int rowCount, int colCount, int sz, int* offsets) {
+extern "C" __global__ void checkParity(int* pop, bool* rowResults) {
   int startJ = threadIdx.y;
   int j      = startJ;
 
-  bool rowResult = false;
-
-  for (int i = 0; i < colCount; ++i) {
-    int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
-
-    if (lamIx > -1) {
-      rowResult = (rowResult != hard(lam[lamIx]));
-    }
-  }
-
-  *pop = __syncthreads_or(rowResult);
+  *pop = __syncthreads_or(rowResults[j]);
 }
 
