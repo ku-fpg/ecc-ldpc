@@ -119,10 +119,9 @@ extern "C" __global__ void insertOnes(double* mLet, bool* nonzero, int rowCount,
 // Arraylet matrix coordinates //
 extern "C" __global__ void selfProduct(double* mLet, double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.z;
-
+  int j = blockIdx.y*blockDim.y + threadIdx.y;
   int kStart = threadIdx.x*(colCount/blockDim.x);
 
-  int j = blockIdx.y*blockDim.y + threadIdx.y;
 
   double prod = 1;
   if (offsets[(j/sz)*colCount + i] > -1) {

@@ -101,7 +101,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
   -- nonzeroMat <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Bool)
   partials   <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Double)
-  print ((colCount`div`11)*(rowCount`div`2))
+  print ((colCount`div`2)*(rowCount`div`8))
 
   -- launchKernel makeNonzeroMatFun
   --              (fromIntegral colCount, 1, 1)
@@ -209,7 +209,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 launchKernel selfProductFun
                              (1, 2, fromIntegral colCount)
                              -- (fromIntegral (colCount `div` 4), fromIntegral (rowCount `div` 8), 1)
-                             (fromIntegral (colCount `div` 11), fromIntegral (rowCount `div` 2), 1)
+                             (fromIntegral (colCount `div` 22), fromIntegral (rowCount `div` 2), 1)
                              0
                              Nothing
                              [VArg mLet
