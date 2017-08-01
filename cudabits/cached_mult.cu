@@ -95,44 +95,45 @@ extern "C" __global__ void setToOne(double* mLet, int rowCount, int colCount, in
   int j = threadIdx.y;
 
   int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
-  if (lamIx > -1) {
+  /* if (lamIx > -1) { */
     mLet[(j*colCount) + i] = 1;
-  }
+  /* } */
 }
 
-extern "C" __global__ void setToZero(double* mLet, int rowCount, int colCount, int sz, int* offsets) {
+extern "C" __global__ void makeNonzeroMat(bool* nonzero, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.x;
   int j = threadIdx.y;
 
-  int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
-  if (lamIx > -1) {
+  nonzero[(j*colCount) + i] = (offsets[(j/sz)*colCount + i] > -1);
+}
+
+extern "C" __global__ void insertOnes(double* mLet, bool* nonzero, int rowCount, int colCount, int sz) {
+  int i = blockIdx.x;
+  int j = threadIdx.y;
+
+  if (!nonzero[(j*colCount) + i]) {
     mLet[(j*colCount) + i] = 1;
   }
 }
 
 // Arraylet matrix coordinates //
 extern "C" __global__ void selfProduct(double* mLet, double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
-  int i = blockIdx.x;
-  int jStart = threadIdx.y*(rowCount/blockDim.y);
+  int i = blockIdx.z;
 
   int kStart = threadIdx.x*(colCount/blockDim.x);
 
-  for (int j = jStart; j < (threadIdx.y+1)*(rowCount/blockDim.y); ++j) {
-    double prod = 1;
-    if (offsets[(j/sz)*colCount + i] > -1) {
-      for (int k = kStart; k < (threadIdx.x+1)*(colCount/blockDim.x); ++k) {
+  int j = blockIdx.y*blockDim.y + threadIdx.y;
 
-        int lamIx = lamIndex(k, j, sz, rowCount, colCount, offsets);
-        if (k != i) {
-          if (lamIx > -1) {
-            /* atomicMul(&newMLet[(j*colCount) + i], mLet[(j*colCount) + k]); */
-            prod *= mLet[(j*colCount) + k];
-          }
-        }
+  double prod = 1;
+  if (offsets[(j/sz)*colCount + i] > -1) {
+    for (int k = kStart; k < (threadIdx.x+1)*(colCount/blockDim.x); ++k) {
+
+      if (k != i && offsets[(j/sz)*colCount + k] > -1) {
+        prod *= mLet[(j*colCount) + k];
       }
-
-      atomicMul(&newMLet[(j*colCount) + i], prod);
     }
+
+    atomicMul(&newMLet[(j*colCount) + i], prod);
   }
 }
 

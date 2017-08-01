@@ -79,8 +79,10 @@ decoder ::
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   (mLet0, offsets, rowCount, colCount) <- init'd
 
+  makeNonzeroMatFun <- getFun cm "makeNonzeroMat"
   tanhTransformFun  <- getFun cm "tanhTransform"
   setToOneFun       <- getFun cm "setToOne"
+  insertOnesFun     <- getFun cm "insertOnes"
   selfProductFun    <- getFun cm "selfProduct"
   atanhTransformFun <- getFun cm "atanhTransform"
   updateLamFun      <- getFun cm "updateLam"
@@ -97,6 +99,22 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
   rowResults <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Bool)
 
+  -- nonzeroMat <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Bool)
+  partials   <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Double)
+  print ((colCount`div`11)*(rowCount`div`2))
+
+  -- launchKernel makeNonzeroMatFun
+  --              (fromIntegral colCount, 1, 1)
+  --              (1, fromIntegral rowCount, 1)
+  --              8
+  --              Nothing
+  --              [VArg nonzeroMat
+  --              ,IArg rowCount
+  --              ,IArg colCount
+  --              ,IArg (fromIntegral sz)
+  --              ,VArg offsets
+  --              ]
+
 
   return $ \rate maxIterations orig_lam -> do
     let orig_lam_list = U.toList orig_lam
@@ -104,7 +122,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
     lam_dev <- newListArray $ U.toList $ orig_lam
 
-    -- zeroArr <- newListArray [0] :: IO (DevicePtr Int)
     pop_dev <- newListArray [0] :: IO (DevicePtr Int32)
 
     lamResultRef <- newIORef lam_dev
@@ -119,12 +136,11 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
           | otherwise              = do
               mLet <- readIORef mLetRef
               newMLet <- readIORef newMLetRef
-              -- Check
-              -- copyArray 1 zeroArr pop_dev
-              -- memset pop_dev 4 0
+
+              -- Check parity
               launchKernel parityRowResultsFun
                            (1, fromIntegral rowCount, 1)
-                           (fromIntegral colCount,1,1)
+                           (fromIntegral colCount, 1, 1)
                            8
                            Nothing
                            [VArg rowResults
@@ -176,16 +192,29 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ]
                 Stream.block stream1
 
+                -- launchKernel insertOnesFun
+                --              (fromIntegral colCount, 1, 1)
+                --              (1, fromIntegral rowCount, 1)
+                --              0
+                --              Nothing
+                --              [VArg mLet
+                --              ,VArg nonzeroMat
+                --              ,IArg rowCount
+                --              ,IArg colCount
+                --              ,IArg (fromIntegral sz)
+                --              ]
+
                 -- NOTE: Assumes column count is divisible by 11 and row
                 -- count divisible by 2.
                 launchKernel selfProductFun
-                             (fromIntegral colCount, 1, 1)
+                             (1, 2, fromIntegral colCount)
                              -- (fromIntegral (colCount `div` 4), fromIntegral (rowCount `div` 8), 1)
                              (fromIntegral (colCount `div` 11), fromIntegral (rowCount `div` 2), 1)
                              0
                              Nothing
                              [VArg mLet
                              ,VArg newMLet
+                             -- ,VArg nonzeroMat
                              -- ,VArg lam_dev
                              ,IArg rowCount
                              ,IArg colCount
