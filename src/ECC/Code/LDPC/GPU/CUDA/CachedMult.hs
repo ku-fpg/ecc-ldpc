@@ -84,6 +84,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   setToOneFun       <- getFun cm "setToOne"
   insertOnesFun     <- getFun cm "insertOnes"
   selfProductFun    <- getFun cm "selfProduct"
+  selfProductRowsFun <- getFun cm "selfProductRows"
   atanhTransformFun <- getFun cm "atanhTransform"
   updateLamFun      <- getFun cm "updateLam"
   parityRowResultsFun <- getFun cm "parityRowResults"
@@ -101,7 +102,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
   -- nonzeroMat <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Bool)
   partials   <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Double)
-  print ((colCount`div`2)*(rowCount`div`8))
+  print (rowCount, colCount)
+  print (colCount*rowCount)
 
   -- launchKernel makeNonzeroMatFun
   --              (fromIntegral colCount, 1, 1)
@@ -198,10 +200,11 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 --              0
                 --              Nothing
                 --              [VArg mLet
-                --              ,VArg nonzeroMat
+                --              -- ,VArg nonzeroMat
                 --              ,IArg rowCount
                 --              ,IArg colCount
                 --              ,IArg (fromIntegral sz)
+                --              ,VArg offsets
                 --              ]
 
                 -- NOTE: Assumes column count is divisible by 11 and row
@@ -210,7 +213,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              (1, 2, fromIntegral colCount)
                              -- (fromIntegral (colCount `div` 4), fromIntegral (rowCount `div` 8), 1)
                              (fromIntegral (colCount `div` 22), fromIntegral (rowCount `div` 2), 1)
-                             0
+                             (fromIntegral rowCount * 8)
                              Nothing
                              [VArg mLet
                              ,VArg newMLet
@@ -222,9 +225,26 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,VArg offsets
                              ]
 
+                -- launchKernel selfProductRowsFun
+                --              (fromIntegral rowCount, 1, 1)
+                --              (fromIntegral colCount, 1, 1)
+                --              (fromIntegral colCount*8)
+                --              Nothing
+                --              [VArg mLet
+                --              ,VArg newMLet
+                --              -- ,VArg nonzeroMat
+                --              -- ,VArg lam_dev
+                --              ,IArg rowCount
+                --              ,IArg colCount
+                --              ,IArg (fromIntegral sz)
+                --              ,VArg offsets
+                --              ]
+
                 launchKernel atanhTransformFun
-                             (fromIntegral colCount, 1, 1)
-                             (1,fromIntegral rowCount,1)
+                             (11, 2, 1)
+                             (fromIntegral (colCount`div`11),fromIntegral (rowCount `div` 2),1)
+                             -- (fromIntegral colCount, 1, 1)
+                             -- (1,fromIntegral rowCount,1)
                              0
                              Nothing
                              [VArg newMLet
@@ -241,8 +261,10 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 copyArray orig_lam_len orig_lam_dev lam_dev
 
                 launchKernel updateLamFun
-                             (fromIntegral colCount, 1, 1)
-                             (1,fromIntegral rowCount,1)
+                             -- (fromIntegral colCount, 1, 1)
+                             -- (1, fromIntegral rowCount, 1)
+                             (11, 2, 1)
+                             (fromIntegral (colCount`div`11),fromIntegral (rowCount `div` 2),1)
                              0
                              Nothing
                              [VArg lam_dev

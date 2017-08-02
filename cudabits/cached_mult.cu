@@ -107,11 +107,11 @@ extern "C" __global__ void makeNonzeroMat(bool* nonzero, int rowCount, int colCo
   nonzero[(j*colCount) + i] = (offsets[(j/sz)*colCount + i] > -1);
 }
 
-extern "C" __global__ void insertOnes(double* mLet, bool* nonzero, int rowCount, int colCount, int sz) {
+extern "C" __global__ void insertOnes(double* mLet, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.x;
   int j = threadIdx.y;
 
-  if (!nonzero[(j*colCount) + i]) {
+  if (offsets[((j/sz)*colCount) + i] == -1) {
     mLet[(j*colCount) + i] = 1;
   }
 }
@@ -121,14 +121,14 @@ extern "C" __global__ void selfProduct(double* mLet, double* newMLet, int rowCou
   int i = blockIdx.z;
   int j = blockIdx.y*blockDim.y + threadIdx.y;
   int kStart = threadIdx.x*(colCount/blockDim.x);
-
+  /* int k = blockIdx.x*blockDim.x + threadIdx.x; */
 
   double prod = 1;
   if (offsets[(j/sz)*colCount + i] > -1) {
     for (int k = kStart; k < (threadIdx.x+1)*(colCount/blockDim.x); ++k) {
-
       if (k != i && offsets[(j/sz)*colCount + k] > -1) {
         prod *= mLet[(j*colCount) + k];
+        /* newMLet[(j*colCount) + i] *= mLet[(j*colCount) + k]; */
       }
     }
 
@@ -136,9 +136,36 @@ extern "C" __global__ void selfProduct(double* mLet, double* newMLet, int rowCou
   }
 }
 
+extern "C" __global__ void selfProductRows(double* mLet, double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
+  extern __shared__ double smem[];
+
+  int i = threadIdx.x;
+  int j = blockIdx.x;
+  /* int k = (threadIdx.x + 1)%blockDim.x; */
+
+  smem[i] = mLet[(j*colCount) + i];
+  __syncthreads();
+
+  if (offsets[(j/sz)*colCount + i] > -1) {
+    for (int s = blockDim.x/2; s > 0; s >>= 1) {
+      if (i < s && offsets[(j/sz)*colCount + i + s] > -1) {
+        /* smem[i] = smem[(i+1)%blockDim.x]*smem[i+s]; */
+        smem[i] *= smem[i+s];
+      }
+      __syncthreads();
+    }
+  }
+
+  if (threadIdx.x == 0) {
+    newMLet[(j*colCount) + i] = smem[0]/mLet[(j*colCount) + i];
+  }
+}
+
 extern "C" __global__ void atanhTransform(double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
-  int i = blockIdx.x;
-  int j = threadIdx.y;
+  /* int i = blockIdx.x; */
+  /* int j = threadIdx.y; */
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+  int j = blockIdx.y*blockDim.y + threadIdx.y;
 
   if (offsets[(j/sz)*colCount + i] > -1) {
     newMLet[(j*colCount) + i] = -2*atanh_(newMLet[(j*colCount)+i]);
@@ -149,8 +176,10 @@ extern "C" __global__ void atanhTransform(double* newMLet, int rowCount, int col
 
 // Arraylet matrix coordinates //
 extern "C" __global__ void updateLam(double* newLam, double* newMLet, int rowCount, int colCount, int sz, int* offsets) {
-  int i = blockIdx.x;
-  int j = threadIdx.y;
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+  int j = blockIdx.y*blockDim.y + threadIdx.y;
+  /* int i = blockIdx.x; */
+  /* int j = threadIdx.y; */
   int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
 
   if (lamIx > -1) {
