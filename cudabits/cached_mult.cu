@@ -136,21 +136,34 @@ extern "C" __global__ void insertOnes(float_ty* mLet, int rowCount, int colCount
 
 // Arraylet matrix coordinates //
 extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int rowCount, int colCount, int sz, int* offsets) {
+  extern __shared__ float_ty prod[];
   int i = blockIdx.z;
   int j = blockIdx.y*blockDim.y + threadIdx.y;
-  int kStart = threadIdx.x*(colCount/blockDim.x);
-  /* int k = blockIdx.x*blockDim.x + threadIdx.x; */
+  int kStart = threadIdx.x; // *(colCount/blockDim.x);
+  int k = kStart;
 
-  float_ty prod = 1;
   if (offsets[(j/sz)*colCount + i] > -1) {
-    for (int k = kStart; k < (threadIdx.x+1)*(colCount/blockDim.x); ++k) {
-      if (k != i && offsets[(j/sz)*colCount + k] > -1) {
-        prod *= mLet[(j*colCount) + k];
-        /* newMLet[(j*colCount) + i] *= mLet[(j*colCount) + k]; */
+    if (k != i && offsets[(j/sz)*colCount + k] > -1) {
+      prod[k] = mLet[(j*colCount) + k];
+    } else {
+      prod[k] = 1;
+    }
+
+    __syncthreads();
+
+    int nearestPowerOfTwo = 32;
+    if (k < blockDim.x/2) {
+      for (int s = nearestPowerOfTwo; s > 0; s >>= 1) {
+        if (k + s < blockDim.x) {
+          prod[k] *= prod[k + s];
+        }
+        __syncthreads();
       }
     }
 
-    atomicMul(&newMLet[(j*colCount) + i], prod);
+    if (k == 0) {
+      newMLet[(j*colCount) + i] = prod[0];
+    }
   }
 }
 
