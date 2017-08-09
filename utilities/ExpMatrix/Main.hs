@@ -17,8 +17,8 @@ main = do
 
   case args of
     [fileName]
-      | (withoutExt, Extension) <- splitExtension fileName -> do
-          fileContents <- getContents
+      | (_, Extension) <- splitExtension fileName -> do
+          fileContents <- readFile fileName
 
           let Matlab mat = read fileContents :: Matlab Integer
 
