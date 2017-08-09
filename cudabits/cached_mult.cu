@@ -136,17 +136,13 @@ extern "C" __global__ void insertOnes(float_ty* mLet, int rowCount, int colCount
 
 // Arraylet matrix coordinates //
 extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int rowCount, int colCount, int sz, int* offsets) {
-  extern __shared__ volatile float_ty prod[];
+  extern __shared__ float_ty prod[];
   int i = blockIdx.z;
   int j = blockIdx.y*blockDim.y + threadIdx.y;
-  int kStart = threadIdx.x; // *(colCount/blockDim.x);
+  int kStart = threadIdx.x*(colCount/blockDim.x);
   int k = kStart;
 
-  /* int rowsPerBlock = blockDim.y; */
-
   int prodIx = (threadIdx.y*colCount) + k;
-
-  /* float_ty prod2 = 1; */
 
   if (offsets[(j/sz)*colCount + i] > -1) {
     if (k != i && offsets[(j/sz)*colCount + k] > -1) {
@@ -157,18 +153,22 @@ extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int ro
     __syncthreads();
 
     int nearestPowerOfTwo = 32;
-    if (k <= colCount/2) {
-      for (int s = nearestPowerOfTwo; s > 0; s >>= 1) {
-        /* if (prodIx + s < (threadIdx.y*colCount) + colCount) { */
-        if (k + s < colCount) {
-          prod[prodIx] *= prod[prodIx + s];
-        }
-        __syncthreads();
+    double p;
+    for (int s = nearestPowerOfTwo; s > 0; s >>= 1) {
+
+      if (k + s < colCount) {
+        p = prod[prodIx + s];
       }
+      __syncthreads();
+
+      if (k + s < colCount) {
+        prod[prodIx] *= p;
+      }
+      __syncthreads();
     }
 
-    if (k == 0) {
-      newMLet[(j*colCount) + i] = prod[(threadIdx.y*colCount)];
+    if (threadIdx.x == 0) {
+      newMLet[(j*colCount) + i] = prod[threadIdx.y*colCount];
     }
   }
 }

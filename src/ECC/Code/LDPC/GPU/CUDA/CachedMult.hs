@@ -194,7 +194,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,VArg offsets
                              ]
 
-                let rowsPerBlock = 2
+                let rowsPerBlock = 4
                 launchKernel selfProductFun
                              (1, fromIntegral rowCount `div` rowsPerBlock, fromIntegral colCount)
                              (fromIntegral colCount, rowsPerBlock, 1)
