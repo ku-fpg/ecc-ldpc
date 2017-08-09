@@ -181,17 +181,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
               when parity $ do
                 -- Update matrix
-                launchKernel setToOneFun
-                             (fromIntegral colCount, 1, 1)
-                             (1, fromIntegral rowCount, 1)
-                             0
-                             (Just stream1)
-                             [VArg newMLet
-                             ,IArg rowCount
-                             ,IArg colCount
-                             ,IArg (fromIntegral sz)
-                             ,VArg offsets
-                             ]
                 launchKernel tanhTransformFun
                              (fromIntegral colCount, 1, 1)
                              (1, fromIntegral rowCount, 1)
@@ -204,62 +193,24 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,IArg (fromIntegral sz)
                              ,VArg offsets
                              ]
-                Stream.block stream1
 
-                -- launchKernel insertOnesFun
-                --              (fromIntegral colCount, 1, 1)
-                --              (1, fromIntegral rowCount, 1)
-                --              0
-                --              Nothing
-                --              [VArg mLet
-                --              -- ,VArg nonzeroMat
-                --              ,IArg rowCount
-                --              ,IArg colCount
-                --              ,IArg (fromIntegral sz)
-                --              ,VArg offsets
-                --              ]
-
-                -- NOTE: Assumes column count is divisible by 11 and row
-                -- count divisible by 2.
-
+                let rowsPerBlock = 2
                 launchKernel selfProductFun
-                             -- (1, 2, fromIntegral colCount)
-                             -- (fromIntegral (colCount `div` 22), fromIntegral (rowCount `div` 2), 1)
-                             -- (fromIntegral (colCount `div` 4), fromIntegral (rowCount `div` 8), 1)
-                             (1, fromIntegral rowCount, fromIntegral colCount)
-                             (fromIntegral colCount, 1, 1)
-                             (fromIntegral colCount * float_t_width)
+                             (1, fromIntegral rowCount `div` rowsPerBlock, fromIntegral colCount)
+                             (fromIntegral colCount, rowsPerBlock, 1)
+                             (fromIntegral colCount * rowsPerBlock * float_t_width)
                              Nothing
                              [VArg mLet
                              ,VArg newMLet
-                             -- ,VArg nonzeroMat
-                             -- ,VArg lam_dev
                              ,IArg rowCount
                              ,IArg colCount
                              ,IArg (fromIntegral sz)
                              ,VArg offsets
                              ]
 
-                -- launchKernel selfProductRowsFun
-                --              (fromIntegral rowCount, 1, 1)
-                --              (fromIntegral colCount, 1, 1)
-                --              ((fromIntegral colCount+1)*8)
-                --              Nothing
-                --              [VArg mLet
-                --              ,VArg newMLet
-                --              -- ,VArg nonzeroMat
-                --              -- ,VArg lam_dev
-                --              ,IArg rowCount
-                --              ,IArg colCount
-                --              ,IArg (fromIntegral sz)
-                --              ,VArg offsets
-                --              ]
-
                 launchKernel atanhTransformFun
                              (11, 2, 1)
                              (fromIntegral (colCount`div`11),fromIntegral (rowCount `div` 2),1)
-                             -- (fromIntegral colCount, 1, 1)
-                             -- (1,fromIntegral rowCount,1)
                              0
                              Nothing
                              [VArg newMLet
@@ -272,17 +223,11 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 swapRefs tempRef mLetRef newMLetRef
 
                 -- Update guess
-
                 copyArray orig_lam_len orig_lam_dev lam_dev
 
                 launchKernel updateLamFun
                              (11, 2, 1)
                              (fromIntegral (colCount`div`11),fromIntegral (rowCount `div` 2),1)
-                             -- (fromIntegral colCount, 1, 1)
-                             -- (1, fromIntegral rowCount, 1)
-                             --
-                             -- (1, fromIntegral rowCountT, 1)
-                             -- (fromIntegral colCountT,1,1)
                              0
                              Nothing
                              [VArg lam_dev
