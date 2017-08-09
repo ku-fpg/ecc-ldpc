@@ -34,7 +34,7 @@ main = do
 
               mat'Lists  = rowGlue <$> toLists mat
 
-          print (fromLists mat'Lists)
+          print (Matlab (fromLists mat'Lists))
 
       | otherwise ->
           error ("Wrong extension (expected " ++ Extension ++ ")")
