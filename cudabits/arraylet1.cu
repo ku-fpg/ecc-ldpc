@@ -135,47 +135,23 @@ extern "C" __global__ void insertOnes(float_ty* mLet, int rowCount, int colCount
 }
 
 // Arraylet matrix coordinates //
-extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int* nonzeroRows, int* nonzeroCols, int nonzeroCount, int rowCount, int colCount, int sz, int* offsets) {
-  extern __shared__ float_ty prod[];
-  /* int i = blockIdx.z; */
-  /* int j = blockIdx.y*blockDim.y + threadIdx.y; */
-  int j = nonzeroRows[blockIdx.x];
-  int i = nonzeroCols[blockIdx.x];
+extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int rowCount, int colCount, int sz, int* offsets) {
+  int i = blockIdx.z;
+  int j = blockIdx.y*blockDim.y + threadIdx.y;
   int kStart = threadIdx.x*(colCount/blockDim.x);
-  int k = kStart;
+  /* int k = blockIdx.x*blockDim.x + threadIdx.x; */
 
-  int prodIx = (threadIdx.y*colCount) + k;
-
-  /* if (offsets[(j/sz)*colCount + i] == -1) { */
-  /*   printf("== -1\t"); */
-  /* } */
-
-    if (k != i && offsets[(j/sz)*colCount + k] > -1) {
-      prod[prodIx] = mLet[(j*colCount) + k];
-    } else {
-      prod[prodIx] = 1;
-    }
-    __syncthreads();
-
-    int nearestPowerOfTwo = 32;
-    double p;
-    for (int s = nearestPowerOfTwo; s > 0; s >>= 1) {
-
-      /* if (k + s < colCount) { */
-      /*   p = prod[prodIx + s]; */
-      /* } */
-      /* __syncthreads(); */
-
-      if (k + s < colCount) {
-        prod[prodIx] *= prod[prodIx + s];
+  float_ty prod = 1;
+  if (offsets[(j/sz)*colCount + i] > -1) {
+    for (int k = kStart; k < (threadIdx.x+1)*(colCount/blockDim.x); ++k) {
+      if (k != i && offsets[(j/sz)*colCount + k] > -1) {
+        prod *= mLet[(j*colCount) + k];
+        /* newMLet[(j*colCount) + i] *= mLet[(j*colCount) + k]; */
       }
-      __syncthreads();
     }
 
-    if (threadIdx.x == 0) {
-      newMLet[(j*colCount) + i] = prod[threadIdx.y*colCount];
-    }
-  /* } */
+    atomicMul(&newMLet[(j*colCount) + i], prod);
+  }
 }
 
 extern "C" __global__ void selfProductRows(float_ty* mLet, float_ty* newMLet, int rowCount, int colCount, int sz, int* offsets) {

@@ -26,6 +26,7 @@ library
                 ECC.Code.LDPC.Fast.ArrayletMin,
                 ECC.Code.LDPC.GPU.Reference,
                 ECC.Code.LDPC.GPU.CUDA.CachedMult,
+                ECC.Code.LDPC.GPU.CUDA.Arraylet1,
                 ECC.Code.LDPC.Model,
                 ECC.Code.LDPC.Utils,
                 Data.BitVector.Sparse,
