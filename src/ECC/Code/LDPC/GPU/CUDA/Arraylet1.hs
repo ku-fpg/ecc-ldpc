@@ -71,10 +71,26 @@ swapRefs tempRef xRef yRef = do
 convertToFloatT :: [Double] -> [FloatTy]
 convertToFloatT = map realToFrac
 
+maxBlockSize :: IntT
+maxBlockSize = 1024
+
 decoder ::
   CudaAllocations -> Q.QuasiCyclic Integer -> IO (Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   (mLet0, offsets, rowCount, colCount) <- init'd
+
+  let rowsPerBlock
+        -- | rowCount <= maxBlockSize = rowCount
+        | otherwise                = rowCount `div` 4
+
+      colsPerBlock
+        -- | colCount <= maxBlockSize = colCount
+        | otherwise                = colCount `div` 4
+
+      rowBlockSize = rowCount `div` 2
+      colBlockSize = colCount `div` 11
+
+      productColsPerBlock = colBlockSize `div` 2
 
   makeNonzeroMatFun   <- getFun cm "makeNonzeroMat"
   tanhTransformFun    <- getFun cm "tanhTransform"
@@ -95,7 +111,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   newMLetRef <- newIORef newMLet0
   tempRef    <- newIORef =<< (mallocArray 1 :: IO (DevicePtr FloatTy))
 
-  rowResults <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Bool)
+  rowResults <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Int32)
 
   partials   <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr FloatTy)
   print (rowCount, colCount)
@@ -126,8 +142,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
               -- Check parity
               launchKernel parityRowResultsFun
-                           (1, fromIntegral rowCount, 1)
-                           (fromIntegral colCount, 1, 1)
+                           (fromIntegral (colCount `div` colsPerBlock), fromIntegral rowCount, 1)
+                           (fromIntegral colsPerBlock, 1, 1)
                            float_t_width
                            Nothing
                            [VArg rowResults
@@ -139,8 +155,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                            ]
 
               launchKernel checkParityFun
-                           (1,1,1)
-                           (1, fromIntegral rowCount, 1)
+                           (1, fromIntegral (rowCount `div` rowsPerBlock),1)
+                           (1, fromIntegral rowsPerBlock, 1)
                            float_t_width
                            Nothing
                            [VArg pop_dev
@@ -154,20 +170,9 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
               when parity $ do
                 -- Update matrix
-                launchKernel setToOneFun
-                             (fromIntegral colCount, 1, 1)
-                             (1, fromIntegral rowCount, 1)
-                             0
-                             (Just stream1)
-                             [VArg newMLet
-                             ,IArg rowCount
-                             ,IArg colCount
-                             ,IArg (fromIntegral sz)
-                             ,VArg offsets
-                             ]
                 launchKernel tanhTransformFun
-                             (fromIntegral colCount, 1, 1)
-                             (1, fromIntegral rowCount, 1)
+                             (fromIntegral colCount, fromIntegral (rowCount `div` rowsPerBlock), 1)
+                             (1, fromIntegral rowsPerBlock, 1)
                              0
                              Nothing
                              [VArg mLet
@@ -183,8 +188,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 -- count divisible by 2.
 
                 launchKernel selfProductFun
-                             (1, 2, fromIntegral colCount)
-                             (fromIntegral (colCount `div` 22), fromIntegral (rowCount `div` 2), 1)
+                             (1, fromIntegral (rowCount `div` rowBlockSize), fromIntegral colCount)
+                             (fromIntegral productColsPerBlock, fromIntegral rowBlockSize, 1)
                              (fromIntegral colCount * float_t_width)
                              Nothing
                              [VArg mLet
@@ -196,8 +201,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ]
 
                 launchKernel atanhTransformFun
-                             (11, 2, 1)
-                             (fromIntegral (colCount`div`11),fromIntegral (rowCount `div` 2),1)
+                             (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
+                             (fromIntegral colBlockSize,fromIntegral rowBlockSize,1)
                              0
                              Nothing
                              [VArg newMLet

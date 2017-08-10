@@ -99,7 +99,7 @@ __device__ int lamIndex(int i, int j, int sz, int rowCount, int colCount, int* o
 
 extern "C" __global__ void tanhTransform(float_ty* mLet, float_ty* lam, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.x;
-  int j = threadIdx.y;
+  int j = blockIdx.y*blockDim.y + threadIdx.y;
 
   int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
   if (lamIx > -1) {
@@ -140,6 +140,11 @@ extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int ro
   int j = blockIdx.y*blockDim.y + threadIdx.y;
   int kStart = threadIdx.x*(colCount/blockDim.x);
   /* int k = blockIdx.x*blockDim.x + threadIdx.x; */
+
+  if (kStart == 0) {
+    newMLet[(j*colCount) + i] = 1;
+  }
+  __syncthreads();
 
   float_ty prod = 1;
   if (offsets[(j/sz)*colCount + i] > -1) {
@@ -214,25 +219,31 @@ __device__ bool hard(float_ty v) {
   return v > 0;
 }
 
-extern "C" __global__ void parityRowResults(bool* rowResults, float_ty* lam, int rowCount, int colCount, int sz, int* offsets) {
-  int startI = threadIdx.x;
-  int i      = startI;
-  int j      = blockIdx.y;
+extern "C" __global__ void parityRowResults(int* rowResults, float_ty* lam, int rowCount, int colCount, int sz, int* offsets) {
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+  int j = blockIdx.y;
+  if (i == 0) {
+    atomicAnd(&rowResults[j], 0);
+  }
 
   int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
 
   int count = __syncthreads_count(lamIx != -1 && hard(lam[lamIx]));
 
-  if (i == 0) {
-    rowResults[j] = count % 2 == 1;
+  if (threadIdx.x == 0) {
+    // rowResults[j] = count % 2 == 1;
+    atomicAdd(&rowResults[j], count % 2 == 1);
   }
 }
 
 // lam vector coordinates //
-extern "C" __global__ void checkParity(int* pop, bool* rowResults) {
-  int startJ = threadIdx.y;
-  int j      = startJ;
+extern "C" __global__ void checkParity(int* pop, int* rowResults) {
+  int j = blockIdx.y*blockDim.y + threadIdx.y;
+  if (j == 0) {
+    atomicAnd(pop, 0);
+  }
 
-  *pop = __syncthreads_or(rowResults[j]);
+  int blockOr = __syncthreads_or(rowResults[j] % 2) != 0 ? 1 : 0;
+  atomicOr(pop, blockOr);
 }
 
