@@ -80,11 +80,11 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   (mLet0, offsets, rowCount, colCount) <- init'd
 
   let rowsPerBlock
-        -- | rowCount <= maxBlockSize = rowCount
+        | rowCount <= maxBlockSize = rowCount
         | otherwise                = rowCount `div` 4
 
       colsPerBlock
-        -- | colCount <= maxBlockSize = colCount
+        | colCount <= maxBlockSize = colCount
         | otherwise                = colCount `div` 4
 
       rowBlockSize = rowCount `div` 2
