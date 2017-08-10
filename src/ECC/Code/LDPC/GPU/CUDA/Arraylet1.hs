@@ -81,13 +81,16 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
   let rowsPerBlock
         | rowCount <= maxBlockSize = rowCount
-        | otherwise                = rowCount `div` 4
+        | otherwise                = rowCount `div` 2
 
       colsPerBlock
         | colCount <= maxBlockSize = colCount
         | otherwise                = colCount `div` 4
 
-      rowBlockSize = rowCount `div` 2
+      rowBlockSize
+        | rowCount <= maxBlockSize = rowCount `div` 2
+        | otherwise                = rowCount `div` 8
+
       colBlockSize = colCount `div` 11
 
       productColsPerBlock = colBlockSize `div` 2
@@ -219,8 +222,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 copyArray orig_lam_len orig_lam_dev lam_dev
 
                 launchKernel updateLamFun
-                             (11, 2, 1)
-                             (fromIntegral (colCount`div`11),fromIntegral (rowCount `div` 2),1)
+                             (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
+                             (fromIntegral colBlockSize, fromIntegral rowBlockSize,1)
                              0
                              Nothing
                              [VArg lam_dev
