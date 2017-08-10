@@ -43,6 +43,9 @@ import Control.DeepSeq
 import Data.Foldable (fold)
 import Control.Monad --(liftM2)
 
+import Data.List (sortBy)
+import Data.Ord
+
 type IntT    = Int32
 type FloatTy = Double
 
@@ -84,10 +87,29 @@ swapRefs tempRef xRef yRef = do
 convertToFloatT :: [Double] -> [FloatTy]
 convertToFloatT = map realToFrac
 
+maxBlockSize :: IntT
+maxBlockSize = 1024
+
 decoder ::
   CudaAllocations -> Q.QuasiCyclic Integer -> IO (Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
-  (mLet0, offsets, rowCount, colCount) <- init'd
+  (mLet0, offsets, nonzeroIndicesR, nonzeroIndicesC, nonzeroIndicesLen, rowCount, colCount) <- init'd
+
+  let rowsPerBlock
+        | rowCount <= maxBlockSize = rowCount
+        | otherwise                = rowCount `div` 2
+
+      colsPerBlock
+        | colCount <= maxBlockSize = colCount
+        | otherwise                = colCount `div` 4
+
+      rowBlockSize
+        | rowCount <= maxBlockSize = rowCount `div` 2
+        | otherwise                = rowCount `div` 8
+
+      colBlockSize = colCount `div` 11
+
+      productColsPerBlock = colBlockSize `div` 2
 
   makeNonzeroMatFun <- getFun cm "makeNonzeroMat"
   tanhTransformFun  <- getFun cm "tanhTransform"
@@ -110,25 +132,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
   rowResults <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Bool)
 
-  -- nonzeroMat <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr Bool)
-  partials   <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr FloatTy)
   print (rowCount, colCount)
   print (colCount*rowCount)
-
-  mLetT   <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr FloatTy)
-
-  -- launchKernel makeNonzeroMatFun
-  --              (fromIntegral colCount, 1, 1)
-  --              (1, fromIntegral rowCount, 1)
-  --              8
-  --              Nothing
-  --              [VArg nonzeroMat
-  --              ,IArg rowCount
-  --              ,IArg colCount
-  --              ,IArg (fromIntegral sz)
-  --              ,VArg offsets
-  --              ]
-
 
   return $ \rate maxIterations orig_lam -> do
     let orig_lam_list = convertToFloatT $ U.toList orig_lam :: [FloatTy]
@@ -143,8 +148,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
     mLet' <- readIORef mLetRef
     memset mLet' (fromIntegral $ rowCount * colCount * fromIntegral float_t_width) 0
 
-    stream1 <- Stream.create []
-
     let go !iters
           | iters >= maxIterations = writeIORef lamResultRef orig_lam_dev
           | otherwise              = do
@@ -153,8 +156,10 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
               -- Check parity
               launchKernel parityRowResultsFun
-                           (1, fromIntegral rowCount, 1)
-                           (fromIntegral colCount, 1, 1)
+                           (fromIntegral (colCount `div` colsPerBlock), fromIntegral rowCount, 1)
+                           (fromIntegral colsPerBlock, 1, 1)
+                           -- (1, fromIntegral rowCount, 1)
+                           -- (fromIntegral colCount, 1, 1)
                            float_t_width
                            Nothing
                            [VArg rowResults
@@ -194,14 +199,19 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,VArg offsets
                              ]
 
-                let rowsPerBlock = 4
+                -- let rowsPerBlock = 4
+                let indicesPerBlock = 1
                 launchKernel selfProductFun
-                             (1, fromIntegral rowCount `div` rowsPerBlock, fromIntegral colCount)
-                             (fromIntegral colCount, rowsPerBlock, 1)
-                             (fromIntegral colCount * rowsPerBlock * float_t_width)
+                             -- (1, fromIntegral rowCount `div` rowsPerBlock, fromIntegral colCount)
+                             (fromIntegral nonzeroIndicesLen `div` indicesPerBlock, 1, 1)
+                             (fromIntegral colCount, indicesPerBlock, 1)
+                             (fromIntegral colCount * indicesPerBlock * float_t_width)
                              Nothing
                              [VArg mLet
                              ,VArg newMLet
+                             ,VArg nonzeroIndicesR
+                             ,VArg nonzeroIndicesC
+                             ,IArg nonzeroIndicesLen
                              ,IArg rowCount
                              ,IArg colCount
                              ,IArg (fromIntegral sz)
@@ -275,15 +285,20 @@ finalize CudaAllocations {..} = do
   -- unload cm
   -- destroy ctx
 
-initMatrixlet :: Q.QuasiCyclic Integer -> IO (DevicePtr FloatTy, DevicePtr IntT, IntT, IntT)
+initMatrixlet :: Q.QuasiCyclic Integer -> IO (DevicePtr FloatTy, DevicePtr IntT, DevicePtr IntT, DevicePtr IntT, IntT, IntT, IntT)
 initMatrixlet (Q.QuasiCyclic sz qm) = do
   mLetPtr    <- mallocArray (mLetRowCount * mLetColCount)
   -- mLetPtr    <- mallocManagedArray [CuMemAttachHost] (mLetRowCount * mLetColCount)
   offsetsPtr <- newListArray offsets
+  (nonzeroIndicesRPtr, nonzeroIndicesLen) <- newListArrayLen nonzeroIndicesR
+  nonzeroIndicesCPtr <- newListArray nonzeroIndicesC
+
+  putStrLn $ "nonzeroIndicesLen = " ++ show nonzeroIndicesLen
+  putStrLn $ "total index count = " ++ show (length offsets*sz)
 
   -- memset mLetPtr (fromIntegral (mLetRowCount * mLetColCount * 8)) 0
 
-  return (mLetPtr, offsetsPtr, fromIntegral mLetRowCount, fromIntegral mLetColCount)
+  return (mLetPtr, offsetsPtr, nonzeroIndicesRPtr, nonzeroIndicesCPtr, fromIntegral nonzeroIndicesLen, fromIntegral mLetRowCount, fromIntegral mLetColCount)
 
   where
     mLetRowCount = M.nrows qm*sz
@@ -303,6 +318,24 @@ initMatrixlet (Q.QuasiCyclic sz qm) = do
         | x == 0        = error "got to zero; should never happen"
         | otherwise     = 1 + g (x `shiftR` 1)
 
+    nonzeroIndicesR :: [IntT]
+    nonzeroIndicesR = map fst nonzeroIndices
+
+    nonzeroIndicesC :: [IntT]
+    nonzeroIndicesC = map snd nonzeroIndices
+
+    nonzeroIndices :: [(IntT, IntT)]
+    nonzeroIndices =
+      sortBy (\(r1, c1) (r2, c2) -> compare (c1, r1) (c2, r2)) $
+      foldMap (\ (r, c) ->
+        let v   = qm M.! (fromIntegral $ (r `div` sz)+1, fromIntegral $ c+1)
+            off = g v
+        in
+        if v /= 0
+        then [(fromIntegral r, fromIntegral c)]
+        -- then [(fromIntegral $ r+i, fromIntegral $ (c + ((i + off) `mod` fromIntegral sz) `mod` fromIntegral sz)) | i <- [0..fromIntegral sz-1]]
+        else [])
+      [ (r, c) | r <- [0..fromIntegral mLetRowCount-1], c <- [0..fromIntegral mLetColCount-1]]
 
     offsets :: [IntT]
     offsets =

@@ -89,9 +89,9 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
       rowBlockSize
         | rowCount <= maxBlockSize = rowCount `div` 2
-        | otherwise                = rowCount `div` 8
+        | otherwise                = rowCount `div` 3
 
-      colBlockSize = colCount `div` 11
+      colBlockSize = colCount `div` 22
 
       productColsPerBlock = colBlockSize `div` 2
 
@@ -202,6 +202,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,IArg (fromIntegral sz)
                              ,VArg offsets
                              ]
+                -- print "ok"
 
                 launchKernel atanhTransformFun
                              (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
