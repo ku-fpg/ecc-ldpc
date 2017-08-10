@@ -171,8 +171,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                            ]
 
               launchKernel checkParityFun
-                           (1,1,1)
-                           (1, fromIntegral rowCount, 1)
+                           (1, fromIntegral (rowCount `div` rowsPerBlock),1)
+                           (1, fromIntegral rowsPerBlock, 1)
                            float_t_width
                            Nothing
                            [VArg pop_dev
@@ -187,8 +187,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
               when parity $ do
                 -- Update matrix
                 launchKernel tanhTransformFun
-                             (fromIntegral colCount, 1, 1)
-                             (1, fromIntegral rowCount, 1)
+                             (fromIntegral colCount, fromIntegral (rowCount `div` rowsPerBlock), 1)
+                             (1, fromIntegral rowsPerBlock, 1)
                              0
                              Nothing
                              [VArg mLet
@@ -219,8 +219,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ]
 
                 launchKernel atanhTransformFun
-                             (11, 2, 1)
-                             (fromIntegral (colCount`div`11),fromIntegral (rowCount `div` 2),1)
+                             (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
+                             (fromIntegral colBlockSize,fromIntegral rowBlockSize,1)
                              0
                              Nothing
                              [VArg newMLet
@@ -236,8 +236,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 copyArray orig_lam_len orig_lam_dev lam_dev
 
                 launchKernel updateLamFun
-                             (11, 2, 1)
-                             (fromIntegral (colCount`div`11),fromIntegral (rowCount `div` 2),1)
+                             (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
+                             (fromIntegral colBlockSize,fromIntegral rowBlockSize,1)
                              0
                              Nothing
                              [VArg lam_dev

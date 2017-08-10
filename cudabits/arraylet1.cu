@@ -17,7 +17,6 @@ extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int ro
     for (int k = kStart; k < (threadIdx.x+1)*(colCount/blockDim.x); ++k) {
       if (k != i && offsets[(j/sz)*colCount + k] > -1) {
         prod *= mLet[(j*colCount) + k];
-        /* newMLet[(j*colCount) + i] *= mLet[(j*colCount) + k]; */
       }
     }
 
@@ -30,7 +29,6 @@ extern "C" __global__ void selfProductRows(float_ty* mLet, float_ty* newMLet, in
 
   int i = threadIdx.x;
   int j = blockIdx.x;
-  /* int k = (threadIdx.x + 1)%blockDim.x; */
 
   smem[i] = mLet[(j*colCount) + i];
   __syncthreads();
@@ -42,19 +40,8 @@ extern "C" __global__ void selfProductRows(float_ty* mLet, float_ty* newMLet, in
       }
       __syncthreads();
     }
-    /* for (int s = blockDim.x/2; s > 0; s >>= 1) { */
-    /*   if (i < s) { */
-    /*     /1* smem[i] = smem[(i+1)%blockDim.x]*smem[i+s]; *1/ */
-    /*     smem[i] *= smem[i+s]; */
-    /*   } */
-    /*   __syncthreads(); */
-    /* } */
-    newMLet[(j*colCount) + i] = smem[0]; // /mLet[(j*colCount) + i];
+    newMLet[(j*colCount) + i] = smem[0];
   }
-
-  /* if (threadIdx.x == 0) { */
-  /* atomicMul(&newMLet[(j*colCount) + i], smem[0]/mLet[(j*colCount) + i]); */
-  /* } */
 }
 
 

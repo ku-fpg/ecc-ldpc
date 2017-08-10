@@ -166,7 +166,8 @@ extern "C" __global__ void parityRowResults(int* rowResults, float_ty* lam, int 
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   int j = blockIdx.y;
   if (i == 0) {
-    atomicAnd(&rowResults[j], 0);
+    // atomicAnd(&rowResults[j], 0);
+    rowResults[j] = 0;
   }
 
   int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
@@ -175,7 +176,8 @@ extern "C" __global__ void parityRowResults(int* rowResults, float_ty* lam, int 
 
   if (threadIdx.x == 0) {
     // rowResults[j] = count % 2 == 1;
-    atomicAdd(&rowResults[j], count % 2 == 1);
+    // atomicXor(&rowResults[j], count % 2 == 1);
+    rowResults[j] ^= (count % 2 == 1);
   }
 }
 
