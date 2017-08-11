@@ -89,7 +89,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
       rowBlockSize
         | rowCount <= maxBlockSize = rowCount `div` 2
-        | otherwise                = rowCount `div` 3
+        | otherwise                = rowCount `div` 4
 
       colBlockSize = colCount `div` 22
 
@@ -100,7 +100,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   setToOneFun         <- getFun cm "setToOne"
   insertOnesFun       <- getFun cm "insertOnes"
   selfProductFun      <- getFun cm "selfProduct"
-  selfProductRowsFun  <- getFun cm "selfProductRows"
   atanhTransformFun   <- getFun cm "atanhTransform"
   updateLamFun        <- getFun cm "updateLam"
   parityRowResultsFun <- getFun cm "parityRowResults"
@@ -135,8 +134,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
     mLet' <- readIORef mLetRef
     memset mLet' (fromIntegral $ rowCount * colCount * fromIntegral float_t_width) 0
 
-    stream1 <- Stream.create []
-
     let go !iters
           | iters >= maxIterations = writeIORef lamResultRef orig_lam_dev
           | otherwise              = do
@@ -145,8 +142,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
               -- Check parity
               launchKernel parityRowResultsFun
-                           (fromIntegral (colCount `div` colsPerBlock), fromIntegral rowCount, 1)
-                           (fromIntegral colsPerBlock, 1, 1)
+                           (1, fromIntegral rowCount, 1)
+                           (fromIntegral colCount, 1, 1)
                            float_t_width
                            Nothing
                            [VArg rowResults
@@ -185,7 +182,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,IArg (fromIntegral sz)
                              ,VArg offsets
                              ]
-                Stream.block stream1
 
                 -- NOTE: Assumes column count is divisible by 11 and row
                 -- count divisible by 2.
@@ -245,6 +241,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
     let r = Just $! U.map hard $! S.convert $! U.fromList result
 
     free orig_lam_dev
+    free lam_dev
+    free pop_dev
 
     return $! r
   where
