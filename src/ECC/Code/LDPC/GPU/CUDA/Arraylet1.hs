@@ -31,6 +31,7 @@ import qualified Foreign.CUDA.Driver.Stream as Stream
 import Foreign.CUDA.Driver.Module
 
 import Foreign.Storable (sizeOf)
+import qualified Foreign.Marshal as F
 
 import Data.IORef
 
@@ -54,6 +55,10 @@ data CudaAllocations =
 code :: Code
 code = mkLDPC_CodeIO "cuda-arraylet1" E.encoder decoder initialize finalize
 
+-- NOTE: Adapted from Foreign.CUDA.Runtime.Marshal code.
+pokeListArrayAsync :: S.Storable a => [a] -> DevicePtr a -> Maybe Stream -> IO ()
+pokeListArrayAsync !xs !dptr !stream = F.withArrayLen xs $ \len p ->
+  pokeArrayAsync len (HostPtr p) dptr stream
 
 swapRefs :: IORef a -> IORef a -> IORef a -> IO ()
 swapRefs tempRef xRef yRef = do
@@ -78,8 +83,6 @@ decoder ::
   CudaAllocations -> Q.QuasiCyclic Integer -> IO (Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool)))
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   (mLet0, offsets, rowCount, colCount) <- init'd
-
-  SimpleGC enqueueFree <- mkSimpleGC 128 free
 
   let rowsPerBlock
         | rowCount <= maxBlockSize = rowCount
@@ -123,13 +126,29 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
   mLetT   <- mallocArray (fromIntegral $ rowCount * colCount) :: IO (DevicePtr FloatTy)
 
+  let orig_lam_len = fromIntegral colCount*sz :: Int
+
+  orig_lam_dev <- mallocArray orig_lam_len :: IO (DevicePtr FloatTy)
+  lam_dev <- mallocArray orig_lam_len :: IO (DevicePtr FloatTy)
+  pop_dev <- newListArray [0] :: IO (DevicePtr Int32)
+
+  stream1 <- Stream.create []
+  stream2 <- Stream.create []
+
   return $ \rate maxIterations orig_lam -> do
     let orig_lam_list = convertToFloatT $ U.toList orig_lam :: [FloatTy]
-    (orig_lam_dev, orig_lam_len) <- newListArrayLen orig_lam_list
 
-    lam_dev <- newListArray orig_lam_list
+    pokeListArrayAsync orig_lam_list orig_lam_dev (Just stream2)
+    pokeListArrayAsync orig_lam_list lam_dev (Just stream2)
+    pokeListArray [0] pop_dev
 
-    pop_dev <- newListArray [0] :: IO (DevicePtr Int32)
+    -- (orig_lam_dev, orig_lam_len) <- newListArrayLen orig_lam_list
+
+    -- lam_dev <- newListArray orig_lam_list
+
+    -- pop_dev <- newListArray [0] :: IO (DevicePtr Int32)
+
+
 
     lamResultRef <- newIORef lam_dev
 
@@ -235,6 +254,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
                 go (iters+1)
 
+    Stream.block stream1
+    Stream.block stream2
     go 0
 
     lamPtr <- readIORef lamResultRef
@@ -246,9 +267,9 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
     -- free lam_dev
     -- free pop_dev
 
-    enqueueFree orig_lam_dev
-    enqueueFree lam_dev
-    enqueueFree pop_dev
+    -- enqueueFree orig_lam_dev
+    -- enqueueFree lam_dev
+    -- enqueueFree pop_dev
 
     return $! r
   where
