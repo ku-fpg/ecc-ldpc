@@ -1,5 +1,5 @@
 {-# LANGUAGE BangPatterns, RankNTypes, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, KindSignatures, PolyKinds, ExistentialQuantification #-}
 module ECC.Code.LDPC.Utils where
 
 import ECC.Types
@@ -10,6 +10,10 @@ import Data.Monoid hiding ((<>))
 import Data.Semigroup
 import qualified Data.Vector.Unboxed as U
 import Data.Ratio
+
+import Foreign.CUDA.Types (DevicePtr)
+import Data.IORef
+import Control.Concurrent
 
 
 
@@ -127,7 +131,35 @@ omit (MinSum2 (MinSum a) i (Just (MinSum b))) j
         | i == j    = a         -- still needs sign adjust
         | otherwise = abs b     -- also needs sign adjust
 
+-- TODO: Hide this from exporting (maybe put it in a different module).
+data Exists f = forall a. Exists (f a)
 
+applyExists :: (forall a. f a -> r) -> Exists f -> r
+applyExists f (Exists e) = f e
 
+data SimpleGC ptr = SimpleGC (forall a. ptr a -> IO ())
+
+-- | Queue pointers to be free'd eventually by the given free function. For
+-- use with CUDA DevicePtrs, but is general enough to be used for a number
+-- of different kinds of resources.
+mkSimpleGC :: forall (ptr :: k -> *). Int -> (forall a. ptr a -> IO ()) -> IO (SimpleGC ptr)
+mkSimpleGC maxQueueSize freeFn = do
+  freeQueueSizeRef <- newIORef 0
+  freeQueueRef     <- newIORef [] :: IO (IORef [Exists ptr])
+
+  return $ SimpleGC $ \devicePtr -> do
+    freeQueueSize <- readIORef freeQueueSizeRef
+
+    if freeQueueSize >= maxQueueSize
+      then do
+        freeQueue <- readIORef freeQueueRef
+        forkOS $ mapM_ (applyExists freeFn) freeQueue
+
+        writeIORef freeQueueRef     []
+        writeIORef freeQueueSizeRef 0
+
+      else do
+        modifyIORef freeQueueRef     (Exists devicePtr:)
+        modifyIORef freeQueueSizeRef (+1)
 
 

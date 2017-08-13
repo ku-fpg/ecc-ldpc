@@ -79,6 +79,8 @@ decoder ::
 decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   (mLet0, offsets, rowCount, colCount) <- init'd
 
+  SimpleGC enqueueFree <- mkSimpleGC 128 free
+
   let rowsPerBlock
         | rowCount <= maxBlockSize = rowCount
         | otherwise                = rowCount `div` 2
@@ -240,9 +242,13 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
     let r = Just $! U.map hard $! S.convert $! U.fromList result
 
-    free orig_lam_dev
-    free lam_dev
-    free pop_dev
+    -- free orig_lam_dev
+    -- free lam_dev
+    -- free pop_dev
+
+    enqueueFree orig_lam_dev
+    enqueueFree lam_dev
+    enqueueFree pop_dev
 
     return $! r
   where

@@ -164,7 +164,7 @@ __device__ bool hard(float_ty v) {
 
 extern "C" __global__ void parityRowResults(int* rowResults, float_ty* lam, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
-  int j = blockIdx.y;
+  int j = blockIdx.y*blockDim.y + threadIdx.y;
   if (i == 0) {
     // atomicAnd(&rowResults[j], 0);
     rowResults[j] = 0;
