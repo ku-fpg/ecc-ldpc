@@ -21,7 +21,8 @@ import qualified ECC.Code.LDPC.Fast.Encoder as E
 import Data.Monoid
 
 -- import Foreign.CUDA hiding (launchKernel)
-import           Foreign.CUDA.Runtime.Marshal as RM
+import           Foreign.CUDA.Runtime.Marshal as RM hiding (AllocFlag (..))
+import Foreign.CUDA.Driver.Marshal (registerArray, AllocFlag (..))
 import Foreign.CUDA.Types
 -- import qualified Foreign.CUDA.Driver as CUDA
 import Foreign.CUDA.Driver.Context.Base
@@ -31,6 +32,7 @@ import qualified Foreign.CUDA.Driver.Stream as Stream
 import Foreign.CUDA.Driver.Module
 
 import Foreign.Storable (sizeOf)
+import Foreign.ForeignPtr
 import qualified Foreign.Marshal as F
 
 import Data.IORef
@@ -55,10 +57,11 @@ data CudaAllocations =
 code :: Code
 code = mkLDPC_CodeIO "cuda-arraylet1" E.encoder decoder initialize finalize
 
--- NOTE: Adapted from Foreign.CUDA.Runtime.Marshal code.
-pokeListArrayAsync :: S.Storable a => [a] -> DevicePtr a -> Maybe Stream -> IO ()
-pokeListArrayAsync !xs !dptr !stream = F.withArrayLen xs $ \len p ->
-  pokeArrayAsync len (HostPtr p) dptr stream
+pokeListArrayAsync :: S.Storable a => S.Vector a -> DevicePtr a -> Maybe Stream -> IO ()
+pokeListArrayAsync !xs !dptr !stream = do
+  let len       = S.length xs
+      (fptr, _) = S.unsafeToForeignPtr0 xs
+  withForeignPtr fptr (\p -> pokeArrayAsync len (HostPtr p) dptr stream)
 
 swapRefs :: IORef a -> IORef a -> IORef a -> IO ()
 swapRefs tempRef xRef yRef = do
@@ -136,19 +139,11 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   stream2 <- Stream.create []
 
   return $ \rate maxIterations orig_lam -> do
-    let orig_lam_list = convertToFloatT $ U.toList orig_lam :: [FloatTy]
+    let orig_lam_stor = U.convert orig_lam :: S.Vector FloatTy
 
-    pokeListArrayAsync orig_lam_list orig_lam_dev (Just stream2)
-    pokeListArrayAsync orig_lam_list lam_dev (Just stream2)
+    pokeListArrayAsync orig_lam_stor orig_lam_dev (Just stream2)
+    pokeListArrayAsync orig_lam_stor lam_dev      (Just stream2)
     pokeListArray [0] pop_dev
-
-    -- (orig_lam_dev, orig_lam_len) <- newListArrayLen orig_lam_list
-
-    -- lam_dev <- newListArray orig_lam_list
-
-    -- pop_dev <- newListArray [0] :: IO (DevicePtr Int32)
-
-
 
     lamResultRef <- newIORef lam_dev
 
