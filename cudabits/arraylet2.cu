@@ -22,19 +22,30 @@ extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int ro
   extern __shared__ double smem[];
   // int i = blockIdx.z;
   // int j = blockIdx.y*blockDim.y + threadIdx.y;
-  int i = threadIdx.y;
+  int i = blockIdx.y*blockDim.y + threadIdx.y;
   int j = blockIdx.x*blockDim.x + threadIdx.x;
 
+  // if (threadIdx.y == 0) {
+  //   newMLet[(j*colCount) + i] = 1;
+  // }
+
   double r = 1;
-  // double orig = mLet[(j*colCount) + i];
-  smem[(threadIdx.x*colCount) + i] = mLet[(j*colCount) + i];
+
+  double v = mLet[(j*colCount) + i];
+
+  if (offsets[((j/sz)*colCount) + i] > -1) {
+    smem[(threadIdx.x*colCount) + i] = v;
+  } else {
+    smem[(threadIdx.x*colCount) + i] = 1;
+  }
+
   __syncthreads();
 
   if (offsets[((j/sz)*colCount) + i] > -1) {
     for (int k = 0; k < colCount; ++k) {
       double newR = r*smem[(threadIdx.x*colCount) + k];//__shfl(orig, k);
 
-      if (k != i && offsets[((j/sz)*colCount) + k] > -1) {
+      if (k != i) {
         r = newR;
       }
     }
