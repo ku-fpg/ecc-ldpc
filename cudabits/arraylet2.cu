@@ -42,12 +42,12 @@ extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int ro
   __syncthreads();
 
   if (offsets[((j/sz)*colCount) + i] > -1) {
-    for (int k = 0; k < colCount; ++k) {
-      double newR = r*smem[(threadIdx.x*colCount) + k];//__shfl(orig, k);
+    for (int k = 0; k < i; ++k) {
+      r *= smem[(threadIdx.x*colCount) + k];//__shfl(orig, k);
+    }
 
-      if (k != i) {
-        r = newR;
-      }
+    for (int k = i+1; k < colCount; ++k) {
+      r *= smem[(threadIdx.x*colCount) + k];//__shfl(orig, k);
     }
 
     newMLet[(j*colCount) + i] = r;
