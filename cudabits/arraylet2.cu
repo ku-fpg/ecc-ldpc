@@ -1,0 +1,47 @@
+#include "common.h"
+
+
+// From
+// http://on-demand.gputechconf.com/gtc/2013/presentations/S3174-Kepler-Shuffle-Tips-Tricks.pdf
+__device__ __inline__ double shfl(double x, int lane) {
+  // Split the double number into 2 32b registers.
+  int lo, hi;
+  asm volatile( "mov.b32 {%0,%1}, %2;" : "=r"(lo), "=r"(hi) : "d"(x));
+
+  // Shuffle the two 32b registers.
+  lo = __shfl(lo, lane);
+  hi = __shfl(hi, lane);
+
+  // Recreate the 64b number.
+  asm volatile( "mov.b64 %0, {%1,%2};" : "=d"(x) : "r"(lo), "r"(hi));
+
+  return x;
+}
+
+extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int rowCount, int colCount, int sz, int* offsets) {
+  extern __shared__ double smem[];
+  // int i = blockIdx.z;
+  // int j = blockIdx.y*blockDim.y + threadIdx.y;
+  int i = threadIdx.y;
+  int j = blockIdx.x*blockDim.x + threadIdx.x;
+
+  double r = 1;
+  // double orig = mLet[(j*colCount) + i];
+  smem[(threadIdx.x*colCount) + i] = mLet[(j*colCount) + i];
+  __syncthreads();
+
+  if (offsets[((j/sz)*colCount) + i] > -1) {
+    for (int k = 0; k < colCount; ++k) {
+      double newR = r*smem[(threadIdx.x*colCount) + k];//__shfl(orig, k);
+
+      if (k != i && offsets[((j/sz)*colCount) + k] > -1) {
+        r = newR;
+      }
+    }
+
+    newMLet[(j*colCount) + i] = r;
+  } else {
+    newMLet[(j*colCount) + i] = 1;
+  }
+}
+

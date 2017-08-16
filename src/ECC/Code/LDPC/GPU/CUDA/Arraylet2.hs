@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE BangPatterns        #-}
 
-module ECC.Code.LDPC.GPU.CUDA.Arraylet1 where
+module ECC.Code.LDPC.GPU.CUDA.Arraylet2 where
 
 import ECC.Code.LDPC.Utils
 import ECC.Types
@@ -57,7 +57,7 @@ data CudaAllocations =
   }
 
 code :: Code
-code = mkLDPC_CodeIO "cuda-arraylet1" E.encoder decoder initialize finalize
+code = mkLDPC_CodeIO "cuda-arraylet2" E.encoder decoder initialize finalize
 
 pokeListArrayAsync :: S.Storable a => S.Vector a -> DevicePtr a -> Maybe Stream -> IO ()
 pokeListArrayAsync !xs !dptr !stream = do
@@ -205,10 +205,11 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,VArg offsets
                              ]
 
+                let nr = 4
                 launchKernel selfProductFun
-                             (1, fromIntegral (rowCount `div` rowBlockSize), fromIntegral colCount)
-                             (fromIntegral productColsPerBlock, fromIntegral rowBlockSize, 1)
-                             (fromIntegral colCount * float_t_width)
+                             (fromIntegral rowCount `div` nr, 1, 1)
+                             (nr, fromIntegral colCount, 1)
+                             (fromIntegral colCount * nr * float_t_width)
                              Nothing
                              [VArg mLet
                              ,VArg newMLet
@@ -217,7 +218,6 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,IArg (fromIntegral sz)
                              ,VArg offsets
                              ]
-
 
                 launchKernel atanhTransformFun
                              (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
@@ -276,7 +276,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 initialize :: IO CudaAllocations
 initialize = do
   dummy <- RM.mallocArray 1 :: IO (DevicePtr Int) -- Sets up CUDA context
-  cm    <- loadFile "cudabits/arraylet1.ptx"
+  cm    <- loadFile "cudabits/arraylet2.ptx"
   RM.free dummy
 
   return (CudaAllocations {..})

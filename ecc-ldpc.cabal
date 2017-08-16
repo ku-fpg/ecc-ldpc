@@ -27,6 +27,7 @@ library
                 ECC.Code.LDPC.GPU.Reference,
                 ECC.Code.LDPC.GPU.CUDA.CachedMult,
                 ECC.Code.LDPC.GPU.CUDA.Arraylet1,
+                ECC.Code.LDPC.GPU.CUDA.Arraylet2,
                 ECC.Code.LDPC.Model,
                 ECC.Code.LDPC.Utils,
                 Data.BitVector.Sparse,
@@ -128,6 +129,6 @@ executable glue64
   hs-source-dirs: utilities/Glue64
   default-language: Haskell2010
 
--- cabal configure --enable-executable-profiling 
+-- cabal configure --enable-executable-profiling
 
 
