@@ -47,7 +47,7 @@ mkLDPC prefix codeName maxI optRate encoder decoder0 = do
    decoder1 <- decoder0 h
    let decoder' = decoder1 rate maxI
    let unpuncture xs = U.take c_length xs `mappend` U.replicate (getNCols h - c_length) 0
-   return $ ECC
+   decoder' `seq` return $! ECC
         { name     = "ldpc/" ++ prefix ++ "/" ++ codeName ++ "/" ++ show maxI ++ "/" ++ show (numerator rate) ++ "/" ++  show (denominator rate)
         , encode   = \ inp -> pure (inp `mappend` U.take (c_length - m_length) (encoder' inp))
         , decode   = \ inp -> do
@@ -67,9 +67,9 @@ mkLDPC_Code :: (MatrixLoader g, MatrixLoader h)
 mkLDPC_Code name encoder decoder = Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/codeword/message]"] (pure ()) (const (pure ()))
      $ \ vars xs -> case xs of
                 ["ldpc",nm,m,n,x,y] | nm == name && all isDigit n && all isDigit x && all isDigit y
-                   -> fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder (pure . decoder')
+                   -> decoder `seq` fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder (pure . decoder')
                 ["ldpc",nm,m,n] | nm == name && all isDigit n
-                   -> fmap (: []) $ mkLDPC name m (read n) Nothing encoder (pure . decoder')
+                   -> decoder `seq` fmap (: []) $ mkLDPC name m (read n) Nothing encoder (pure . decoder')
                 _  -> return []
       where decoder' h = \x y z -> pure $ decoder h x y z
 

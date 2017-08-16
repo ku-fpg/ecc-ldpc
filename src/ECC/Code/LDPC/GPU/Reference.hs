@@ -29,7 +29,7 @@ type V a = Array DIM1 a
 type M a = Array DIM2 a
 
 code :: Code
-code = compiledLdpc `seq` mkLDPC_Code "gpu-reference" encoder decoder
+code = mkLDPC_Code "gpu-reference" encoder (compiledLdpc `seq` decoder)
 
 ---------------------------------------------------------------------
 

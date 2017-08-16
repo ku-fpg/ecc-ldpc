@@ -35,7 +35,7 @@ import Data.Traversable (for)
 import Data.Monoid hiding (All, Any)
 
 code :: Code
-code = ldpc `seq` mkLDPC_Code "gpu-arraylet-cm" E.encoder decoder
+code = mkLDPC_Code "gpu-arraylet-cm" E.encoder (ldpc `seq` decoder)
 
 decoder :: Q.QuasiCyclic Integer -> Rate -> Int -> U.Vector Double -> Maybe (U.Vector Bool)
 decoder arr@(Q.QuasiCyclic sz qm) = a `seq` b `seq` c `seq` d `seq` e `seq` f `seq` \rate maxIterations orig_lam ->

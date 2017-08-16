@@ -43,6 +43,8 @@ import Control.DeepSeq
 import Data.Foldable (fold)
 import Control.Monad --(liftM2)
 
+import GHC.Conc
+
 type IntT    = Int32
 type FloatTy = Double
 
@@ -140,6 +142,10 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
   return $ \rate maxIterations orig_lam -> do
     let orig_lam_stor = U.convert orig_lam :: S.Vector FloatTy
+        orig_lam_list = U.toList orig_lam
+
+    -- pokeListArray orig_lam_list orig_lam_dev
+    -- pokeListArray orig_lam_list lam_dev
 
     pokeListArrayAsync orig_lam_stor orig_lam_dev (Just stream2)
     pokeListArrayAsync orig_lam_stor lam_dev      (Just stream2)
