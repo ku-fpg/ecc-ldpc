@@ -44,9 +44,10 @@ import Data.Foldable (fold)
 import Control.Monad --(liftM2)
 
 import GHC.Conc
+import GHC.Float
 
 type IntT    = Int32
-type FloatTy = Double
+type FloatTy = Float --Double
 
 float_t_width :: Int
 float_t_width = sizeOf (undefined :: FloatTy)
@@ -148,7 +149,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   -- print (colBlockSize * rowBlockSize)
 
   return $ \rate maxIterations orig_lam -> do
-    let orig_lam_stor = U.convert orig_lam :: S.Vector FloatTy
+    let orig_lam_stor = S.map double2Float $ U.convert orig_lam :: S.Vector FloatTy
         orig_lam_list = U.toList orig_lam
 
     -- pokeListArray orig_lam_list orig_lam_dev

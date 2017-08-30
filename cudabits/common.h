@@ -1,4 +1,4 @@
-typedef double float_ty;
+typedef float float_ty;
 
 // From http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#axzz4meEZrFDA
 __device__ double atomicAdd(double* address, double val)

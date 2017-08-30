@@ -41,7 +41,7 @@ __device__ __inline__ double shfl(double x, int lane) {
 }
 
 extern "C" __global__ void selfProduct(float_ty* lam, float_ty* mLet, float_ty* newMLet, int rowCount, int colCount, int sz, int* offsets) {
-  extern __shared__ double smem[];
+  extern __shared__ float_ty smem[];
 
   int i = blockIdx.y*blockDim.y + threadIdx.y;
   int j = blockIdx.x*blockDim.x + threadIdx.x;
@@ -62,7 +62,7 @@ extern "C" __global__ void selfProduct(float_ty* lam, float_ty* mLet, float_ty* 
 
   __syncthreads();
 
-  if (offsets[((j/sz)*colCount) + i] > -1) {
+  if (lamIx > -1) {
 
     /* for (int k = 0; k < colCount; ++k) { */
     /*   if (k != i) { */
