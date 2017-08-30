@@ -162,33 +162,69 @@ __device__ bool hard(float_ty v) {
   return v > 0;
 }
 
-extern "C" __global__ void parityRowResults(int* rowResults, float_ty* lam, int rowCount, int colCount, int sz, int* offsets) {
+#ifndef NO_PARITY
+
+/* extern "C" __global__ void parityRowResults(int* rowResults, float_ty* lam, int rowCount, int colCount, int sz, int* offsets) { */
+/*   extern __shared__ int paritySmem[]; */
+
+/*   int i = blockIdx.x*blockDim.x + threadIdx.x; */
+/*   int j = blockIdx.y*blockDim.y + threadIdx.y; */
+
+/*   int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets); */
+
+/*   // rowResults[j] = __syncthreads_count(lamIx != -1 && hard(lam[lamIx])); */
+
+/*   paritySmem[(threadIdx.y*colCount) + i] = lamIx > -1 && hard(lam[lamIx]); */
+/*   __syncthreads(); */
+
+/*   int nearestPowerOfTwo = 32; */
+/*   for (int s = nearestPowerOfTwo; s > 0; s >>= 1) { */
+/*     // if (s < colCount) { */
+/*       paritySmem[(threadIdx.y*colCount) + i] ^= paritySmem[(threadIdx.y*colCount) + i + s]; */
+/*     // } */
+/*     __syncthreads(); */
+/*   } */
+
+/*   if (i == 0) { */
+/*     rowResults[j] = paritySmem[threadIdx.y*colCount]; */
+/*   } */
+/* } */
+
+extern "C" __global__ void parityRowResults(int* done, float_ty* lam, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
-  int j = blockIdx.y*blockDim.y + threadIdx.y;
-  if (i == 0) {
-    // atomicAnd(&rowResults[j], 0);
-    rowResults[j] = 0;
+  int jStart = blockIdx.y*blockDim.y + threadIdx.y;
+  int j = jStart;
+
+  if (i == 0 && j == 0) {
+    *done = 0;
   }
+  __syncthreads();
 
-  int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
+  if (!*done) {
+    int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
 
-  int count = __syncthreads_count(lamIx != -1 && hard(lam[lamIx]));
+    int count = __syncthreads_count(hard(lam[lamIx]));
 
-  if (threadIdx.x == 0) {
-    // rowResults[j] = count % 2 == 1;
-    // atomicXor(&rowResults[j], count % 2 == 1);
-    rowResults[j] ^= (count % 2 == 1);
+    if (threadIdx.x == 0) {
+      if (count % 2 == 1 == 1) {
+        *done = 1;
+      }
+    }
   }
 }
+
 
 // lam vector coordinates //
 extern "C" __global__ void checkParity(int* pop, int* rowResults) {
   int j = blockIdx.y*blockDim.y + threadIdx.y;
   if (j == 0) {
-    atomicAnd(pop, 0);
+    /* atomicAnd(pop, 0); */
+    *pop = 0;
   }
+  __syncthreads();
 
   int blockOr = __syncthreads_or(rowResults[j] % 2) != 0 ? 1 : 0;
   atomicOr(pop, blockOr);
 }
+#endif
 

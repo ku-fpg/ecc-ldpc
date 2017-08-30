@@ -11,6 +11,11 @@ import Data.Semigroup
 import qualified Data.Vector.Unboxed as U
 import Data.Ratio
 
+import Control.Concurrent
+import Data.IORef
+import Control.Monad
+import Data.List (foldl1')
+
 
 
 -- | `mkLDPC` makes and LDPC EEC. The contact here is is that  
@@ -22,11 +27,12 @@ mkLDPC :: (MatrixLoader g, MatrixLoader h)
        => String 
        -> String 
        -> Int
+       -> Int
        -> Maybe (Ratio Int)
        -> (g -> Rate -> U.Vector Bool -> U.Vector Bool)
        -> (h -> IO (Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))))
        -> IO (ECC IO)
-mkLDPC prefix codeName maxI optRate encoder decoder0 = do
+mkLDPC prefix codeName maxI maxThreadCount optRate encoder decoder0 = do
    g <- loadMatrix (codeName ++ "/G") -- with G, we prepend the identity
    print (getNRows g, getNCols g)
    -- #rows are the message size, #cols + #rows are the (unpunctuated) message
@@ -44,17 +50,26 @@ mkLDPC prefix codeName maxI optRate encoder decoder0 = do
    let c_length = (m_length * denominator rate) `div` numerator rate
    print $ c_length
    let encoder' = encoder g rate
-   decoder1 <- decoder0 h
-   let decoder' = decoder1 rate maxI
+   decoder1s <- replicateM maxThreadCount $ decoder0 h
+   let decoder's = map (\f -> f rate maxI) decoder1s
    let unpuncture xs = U.take c_length xs `mappend` U.replicate (getNCols h - c_length) 0
-   decoder' `seq` return $! ECC
+
+   decoderInUse <- newIORef $ replicate maxThreadCount False
+
+   foldl1' seq decoder's `seq` return $! ECC
         { name     = "ldpc/" ++ prefix ++ "/" ++ codeName ++ "/" ++ show maxI ++ "/" ++ show (numerator rate) ++ "/" ++  show (denominator rate)
         , encode   = \ inp -> pure (inp `mappend` U.take (c_length - m_length) (encoder' inp))
-        , decode   = \ inp -> do
-            r0 <- decoder' (unpuncture inp)
-            pure $ case r0 of
-              Nothing  -> (U.take m_length  $ U.map hard inp, False)
-              Just  r  -> (U.take m_length $ r, True)
+        , decode   = do
+            tid <- myThreadId
+            let tidN = read $ drop (length "ThreadId" + 1) (show tid) :: Int
+            -- print =<< fmap (\x -> ("myThreadId", x)) myThreadId
+            -- print =<< threadCapability =<< myThreadId
+
+            pure $ \ inp -> do
+              r0 <- (decoder's !! (tidN `rem` maxThreadCount)) (unpuncture inp)
+              pure $ case r0 of
+                Nothing  -> (U.take m_length  $ U.map hard inp, False)
+                Just  r  -> (U.take m_length $ r, True)
         , message_length = m_length
         , codeword_length = c_length
         }
@@ -67,28 +82,29 @@ mkLDPC_Code :: (MatrixLoader g, MatrixLoader h)
 mkLDPC_Code name encoder decoder = Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/codeword/message]"] (pure ()) (const (pure ()))
      $ \ vars xs -> case xs of
                 ["ldpc",nm,m,n,x,y] | nm == name && all isDigit n && all isDigit x && all isDigit y
-                   -> decoder `seq` fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder (pure . decoder')
+                   -> decoder `seq` fmap (: []) $ mkLDPC name m (read n) 1 (Just (read x % read y)) encoder (pure . decoder')
                 ["ldpc",nm,m,n] | nm == name && all isDigit n
-                   -> decoder `seq` fmap (: []) $ mkLDPC name m (read n) Nothing encoder (pure . decoder')
+                   -> decoder `seq` fmap (: []) $ mkLDPC name m (read n) 1 Nothing encoder (pure . decoder')
                 _  -> return []
       where decoder' h = \x y z -> pure $ decoder h x y z
 
 mkLDPC_CodeIO :: (MatrixLoader g, MatrixLoader h)
             => String
+            -> Int
             -> (g -> Rate -> U.Vector Bool -> U.Vector Bool)
             -> (vars -> h -> IO (Rate -> Int -> U.Vector Double -> IO (Maybe (U.Vector Bool))))
             -> IO vars
             -> (vars -> IO ())
             -> Code
-mkLDPC_CodeIO name encoder decoder initialize finalize =
+mkLDPC_CodeIO name maxThreadCount encoder decoder initialize finalize =
   Code ["ldpc/" ++ name ++ "/<matrix-name>/<max-rounds>[/codeword/message]"]
        initialize
        finalize
        $ \ vars xs -> case xs of
                         ["ldpc",nm,m,n,x,y] | nm == name && all isDigit n && all isDigit x && all isDigit y
-                           -> fmap (: []) $ mkLDPC name m (read n) (Just (read x % read y)) encoder (decoder vars)
+                           -> fmap (: []) $ mkLDPC name m (read n) maxThreadCount (Just (read x % read y)) encoder (decoder vars)
                         ["ldpc",nm,m,n] | nm == name && all isDigit n 
-                           -> fmap (: []) $ mkLDPC name m (read n) Nothing encoder (decoder vars)
+                           -> fmap (: []) $ mkLDPC name m (read n) maxThreadCount Nothing encoder (decoder vars)
                         _  -> return []
 
 

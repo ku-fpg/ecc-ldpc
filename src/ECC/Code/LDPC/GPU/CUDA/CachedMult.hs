@@ -63,7 +63,7 @@ data CudaAllocations =
   }
 
 code :: Code
-code = mkLDPC_CodeIO "cuda-arraylet-cm" E.encoder decoder initialize finalize
+code = mkLDPC_CodeIO "cuda-arraylet-cm" 1 E.encoder decoder initialize finalize
 
 
                 -- atomicWriteIORef tempRef mLet

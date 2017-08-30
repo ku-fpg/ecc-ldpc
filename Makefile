@@ -1,6 +1,8 @@
 NVCC_COMPILER_OPTS=#-std=c++98
 ARCH_FLAGS=-arch=sm_37 -gencode=arch=compute_37,code=sm_37 -rdc=true -lcudadevrt
-NVCC_OPTS= --ptx -g -dc
+DEBUG_OPS=#-G -lineinfo
+OPT_OPTS=-O3
+NVCC_OPTS= --ptx $(DEBUG_OPTS) $(OPT_OPTS) -dc
 
 all: cudabits/cached_mult.ptx cudabits/arraylet1.ptx cudabits/arraylet2.ptx
 	cabal build

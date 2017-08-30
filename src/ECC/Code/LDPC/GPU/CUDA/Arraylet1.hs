@@ -57,7 +57,7 @@ data CudaAllocations =
   }
 
 code :: Code
-code = mkLDPC_CodeIO "cuda-arraylet1" E.encoder decoder initialize finalize
+code = mkLDPC_CodeIO "cuda-arraylet1" 1 E.encoder decoder initialize finalize
 
 pokeListArrayAsync :: S.Storable a => S.Vector a -> DevicePtr a -> Maybe Stream -> IO ()
 pokeListArrayAsync !xs !dptr !stream = do

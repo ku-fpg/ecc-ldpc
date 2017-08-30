@@ -57,7 +57,7 @@ data CudaAllocations =
   }
 
 code :: Code
-code = mkLDPC_CodeIO "cuda-arraylet2" E.encoder decoder initialize finalize
+code = mkLDPC_CodeIO "cuda-arraylet2" 1 E.encoder decoder initialize finalize
 
 pokeListArrayAsync :: S.Storable a => S.Vector a -> DevicePtr a -> Maybe Stream -> IO ()
 pokeListArrayAsync !xs !dptr !stream = do
@@ -123,7 +123,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   newMLetRef <- newIORef newMLet0
   tempRef    <- newIORef =<< (mallocArray 1 :: IO (DevicePtr FloatTy))
 
-  rowResults <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Int32)
+  -- rowResults <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr Int32)
 
   partials   <- mallocArray (fromIntegral rowCount) :: IO (DevicePtr FloatTy)
   print (rowCount, colCount)
@@ -136,9 +136,11 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   orig_lam_dev <- mallocArray orig_lam_len :: IO (DevicePtr FloatTy)
   lam_dev <- mallocArray orig_lam_len :: IO (DevicePtr FloatTy)
   pop_dev <- newListArray [0] :: IO (DevicePtr Int32)
+  done_dev <- newListArray [0] :: IO (DevicePtr Int32)
 
   stream1 <- Stream.create []
   stream2 <- Stream.create []
+  mletStream <- Stream.create []
 
   return $ \rate maxIterations orig_lam -> do
     let orig_lam_stor = U.convert orig_lam :: S.Vector FloatTy
@@ -147,7 +149,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
     -- pokeListArray orig_lam_list orig_lam_dev
     -- pokeListArray orig_lam_list lam_dev
 
-    pokeListArrayAsync orig_lam_stor orig_lam_dev (Just stream2)
+    pokeListArrayAsync orig_lam_stor orig_lam_dev (Just stream1)
     pokeListArrayAsync orig_lam_stor lam_dev      (Just stream2)
     pokeListArray [0] pop_dev
 
@@ -162,31 +164,28 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
               mLet <- readIORef mLetRef
               newMLet <- readIORef newMLetRef
 
-              -- Check parity
-              launchKernel parityRowResultsFun
-                           (1, fromIntegral rowCount, 1)
-                           (fromIntegral colCount, 1, 1)
-                           float_t_width
-                           Nothing
-                           [VArg rowResults
-                           ,VArg lam_dev
-                           ,IArg rowCount
-                           ,IArg colCount
-                           ,IArg (fromIntegral sz)
-                           ,VArg offsets
-                           ]
+              -- Check parity every 5th iteration
+              parity <- if True --iters < 3 || iters `rem` 5 == 0 || iters == maxIterations - 1
+                then do
+                  launchKernel parityRowResultsFun
+                               (1, fromIntegral rowCount, 1)
+                               (fromIntegral colCount, 1, 1)
+                               -- (1, fromIntegral rowCount, 1)
+                               -- (1, 32*3, 1)
+                               -- (fromIntegral colCount, fromIntegral rowCount `div` (32*3), 1)
+                               (2 * fromIntegral colCount * 8)
+                               Nothing
+                               [VArg done_dev
+                               ,VArg lam_dev
+                               ,IArg rowCount
+                               ,IArg colCount
+                               ,IArg (fromIntegral sz)
+                               ,VArg offsets
+                               ]
 
-              launchKernel checkParityFun
-                           (1, fromIntegral (rowCount `div` rowsPerBlock),1)
-                           (1, fromIntegral rowsPerBlock, 1)
-                           float_t_width
-                           Nothing
-                           [VArg pop_dev
-                           ,VArg rowResults
-                           ]
-
-              [pop] <- peekListArray 1 pop_dev
-              let parity = pop > 0
+                  [done] <- peekListArray 1 done_dev
+                  return (done > 0)
+                else return True
 
               writeIORef lamResultRef lam_dev
 
@@ -231,11 +230,11 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,VArg offsets
                              ]
 
+                copyArray orig_lam_len orig_lam_dev lam_dev
+
                 swapRefs tempRef mLetRef newMLetRef
 
                 -- Update guess
-
-                copyArray orig_lam_len orig_lam_dev lam_dev
 
                 launchKernel updateLamFun
                              (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
