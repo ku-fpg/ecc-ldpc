@@ -142,6 +142,11 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
   stream2 <- Stream.create []
   mletStream <- Stream.create []
 
+  -- putStr "atanh compute occupancy: "
+  -- -- (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
+  -- -- (fromIntegral colBlockSize,fromIntegral rowBlockSize,1)
+  -- print (colBlockSize * rowBlockSize)
+
   return $ \rate maxIterations orig_lam -> do
     let orig_lam_stor = U.convert orig_lam :: S.Vector FloatTy
         orig_lam_list = U.toList orig_lam
@@ -173,7 +178,7 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                                -- (1, fromIntegral rowCount, 1)
                                -- (1, 32*3, 1)
                                -- (fromIntegral colCount, fromIntegral rowCount `div` (32*3), 1)
-                               (2 * fromIntegral colCount * 8)
+                               0
                                Nothing
                                [VArg done_dev
                                ,VArg lam_dev
@@ -191,18 +196,18 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
 
               when parity $ do
                 -- Update matrix
-                launchKernel tanhTransformFun
-                             (fromIntegral colCount, fromIntegral (rowCount `div` rowsPerBlock), 1)
-                             (1, fromIntegral rowsPerBlock, 1)
-                             0
-                             Nothing
-                             [VArg mLet
-                             ,VArg lam_dev
-                             ,IArg rowCount
-                             ,IArg colCount
-                             ,IArg (fromIntegral sz)
-                             ,VArg offsets
-                             ]
+                -- launchKernel tanhTransformFun
+                --              (fromIntegral colCount, fromIntegral (rowCount `div` rowsPerBlock), 1)
+                --              (1, fromIntegral rowsPerBlock, 1)
+                --              0
+                --              Nothing
+                --              [VArg mLet
+                --              ,VArg lam_dev
+                --              ,IArg rowCount
+                --              ,IArg colCount
+                --              ,IArg (fromIntegral sz)
+                --              ,VArg offsets
+                --              ]
 
                 let nr = 4
                 launchKernel selfProductFun
@@ -210,7 +215,8 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              (nr, fromIntegral colCount, 1)
                              (fromIntegral colCount * nr * float_t_width)
                              Nothing
-                             [VArg mLet
+                             [VArg lam_dev
+                             ,VArg mLet
                              ,VArg newMLet
                              ,IArg rowCount
                              ,IArg colCount
@@ -218,17 +224,19 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                              ,VArg offsets
                              ]
 
-                launchKernel atanhTransformFun
-                             (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
-                             (fromIntegral colBlockSize,fromIntegral rowBlockSize,1)
-                             0
-                             Nothing
-                             [VArg newMLet
-                             ,IArg rowCount
-                             ,IArg colCount
-                             ,IArg (fromIntegral sz)
-                             ,VArg offsets
-                             ]
+                -- launchKernel atanhTransformFun
+                --              (fromIntegral 1, fromIntegral (rowCount `div` 23 + 1), 1)
+                --              (fromIntegral colCount, fromIntegral 23,1)
+                --              -- (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
+                --              -- (fromIntegral colBlockSize,fromIntegral rowBlockSize,1)
+                --              0
+                --              Nothing
+                --              [VArg newMLet
+                --              ,IArg rowCount
+                --              ,IArg colCount
+                --              ,IArg (fromIntegral sz)
+                --              ,VArg offsets
+                --              ]
 
                 copyArray orig_lam_len orig_lam_dev lam_dev
 

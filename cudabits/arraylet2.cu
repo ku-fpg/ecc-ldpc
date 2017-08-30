@@ -40,7 +40,7 @@ __device__ __inline__ double shfl(double x, int lane) {
   return x;
 }
 
-extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int rowCount, int colCount, int sz, int* offsets) {
+extern "C" __global__ void selfProduct(float_ty* lam, float_ty* mLet, float_ty* newMLet, int rowCount, int colCount, int sz, int* offsets) {
   extern __shared__ double smem[];
 
   int i = blockIdx.y*blockDim.y + threadIdx.y;
@@ -52,8 +52,10 @@ extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int ro
 
   double v = mLet[(j*colCount) + i];
 
-  if (offsets[((j/sz)*colCount) + i] > -1) {
-    smem[globalIdx + i] = v;
+  int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
+
+  if (lamIx > -1) {
+    smem[globalIdx + i] = tanh(- ((lam[lamIx] - v)/2));
   } else {
     smem[globalIdx + i] = 1;
   }
@@ -62,21 +64,21 @@ extern "C" __global__ void selfProduct(float_ty* mLet, float_ty* newMLet, int ro
 
   if (offsets[((j/sz)*colCount) + i] > -1) {
 
-    for (int k = 0; k < colCount; ++k) {
-      if (k != i) {
-        r *= smem[globalIdx + k];
-      }
+    /* for (int k = 0; k < colCount; ++k) { */
+    /*   if (k != i) { */
+    /*     r *= smem[globalIdx + k]; */
+    /*   } */
+    /* } */
+
+    for (int k = 0; k < i; ++k) {
+      r *= smem[globalIdx + k];
     }
 
-    // for (int k = 0; k < i; ++k) {
-    //   r *= smem[globalIdx + k];
-    // }
+    for (int k = i+1; k < colCount; ++k) {
+      r *= smem[globalIdx + k];
+    }
 
-    // for (int k = i+1; k < colCount; ++k) {
-    //   r *= smem[globalIdx + k];
-    // }
-
-    newMLet[(j*colCount) + i] = r;
+    newMLet[(j*colCount) + i] = -2*atanh_(r);
   }
 }
 
