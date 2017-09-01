@@ -150,12 +150,31 @@ extern "C" __global__ void atanhTransform(float_ty* newMLet, int rowCount, int c
 // Arraylet matrix coordinates //
 extern "C" __global__ void updateLam(float_ty* newLam, float_ty* newMLet, int rowCount, int colCount, int sz, int* offsets) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
-  int j = blockIdx.y*blockDim.y + threadIdx.y;
-  int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets);
+  /* int j = blockIdx.y*blockDim.y + threadIdx.y; */
+  /* int lamIx = lamIndex(i, j, sz, rowCount, colCount, offsets); */
 
-  if (lamIx > -1) {
-    atomicAdd(&newLam[lamIx], newMLet[(j*colCount) + i]);
+  if (i < colCount*sz) {
+    int blockI = i / sz;
+    int modI   = i % sz;
+
+    int c    = blockI;
+
+    for (int j = 0; j < rowCount/sz; ++j) {
+      int off    = sz - offsets[(j*colCount) + blockI];
+      int localR = (i + off) % sz;
+
+      int r    = (j * sz) + localR;
+
+      if (off > -1) {
+        /* atomicAdd(&newLam[i], newMLet[r * colCount + c]); */
+        newLam[i] += newMLet[r * colCount + c];
+      }
+    }
   }
+
+  /* if (lamIx > -1) { */
+  /*   atomicAdd(&newLam[lamIx], newMLet[(j*colCount) + i]); */
+  /* } */
 }
 
 __device__ bool hard(float_ty v) {
