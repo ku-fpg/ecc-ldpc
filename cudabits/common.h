@@ -225,7 +225,7 @@ extern "C" __global__ void parityRowResults(int* done, float_ty* lam, int rowCou
     int count = __syncthreads_count(lamIx > -1 && hard(lam[lamIx]));
 
     if (threadIdx.x == 0) {
-      if (count % 2 == 1 == 1) {
+      if (count % 2 == 1) {
         *done = 1;
       }
     }
