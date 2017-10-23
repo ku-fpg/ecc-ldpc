@@ -28,6 +28,7 @@ library
                 ECC.Code.LDPC.GPU.CUDA.CachedMult,
                 ECC.Code.LDPC.GPU.CUDA.Arraylet1,
                 ECC.Code.LDPC.GPU.CUDA.Arraylet2,
+                ECC.Code.LDPC.GPU.CUDA.TwoArrays,
                 ECC.Code.LDPC.Model,
                 ECC.Code.LDPC.Utils,
                 Data.BitVector.Sparse,

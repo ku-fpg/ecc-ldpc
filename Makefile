@@ -4,7 +4,7 @@ DEBUG_OPS=#-G -lineinfo
 OPT_OPTS=-O3
 NVCC_OPTS= --ptx $(DEBUG_OPTS) $(OPT_OPTS) -dc
 
-all: cudabits/cached_mult.ptx cudabits/arraylet1.ptx cudabits/arraylet2.ptx
+all: cudabits/cached_mult.ptx cudabits/arraylet1.ptx cudabits/arraylet2.ptx cudabits/two_arrays.ptx
 	cabal build
 
 cudabits/cached_mult.ptx: cudabits/cached_mult.cu cudabits/common.h
@@ -15,6 +15,9 @@ cudabits/arraylet1.ptx: cudabits/arraylet1.cu cudabits/common.h
 
 cudabits/arraylet2.ptx: cudabits/arraylet2.cu cudabits/common.h
 	(cd cudabits; nvcc arraylet2.cu ${ARCH_FLAGS} --compiler-options "${NVCC_COMPILER_OPTS}" ${NVCC_OPTS})
+
+cudabits/two_arrays.ptx: cudabits/two_arrays.cu cudabits/common.h
+	(cd cudabits; nvcc two_arrays.cu ${ARCH_FLAGS} --compiler-options "${NVCC_COMPILER_OPTS}" ${NVCC_OPTS})
 
 clean:
 	rm -f cudabits/cached_mult.ptx

@@ -23,6 +23,7 @@ import qualified ECC.Code.LDPC.Zero as Zero
 import qualified ECC.Code.LDPC.GPU.CUDA.CachedMult as CUDACachedMult
 import qualified ECC.Code.LDPC.GPU.CUDA.Arraylet1 as CUDAArraylet1
 import qualified ECC.Code.LDPC.GPU.CUDA.Arraylet2 as CUDAArraylet2
+import qualified ECC.Code.LDPC.GPU.CUDA.TwoArrays as TwoArrays
 
 import Data.Array.Accelerate.LLVM.PTX
 
@@ -32,7 +33,7 @@ import System.Remote.Monitoring
 
 codes :: Code
 codes = Unencoded.code <> OrigReference.code <> Sparse.code <> Min.code <> SparseMin.code <> Model.code <> ElimTanh.code
-            <> Arraylet.code <> ArrayletMin.code <> CachedMult.code <> GPUCachedMult.code <> GPUReference.code <> Zero.code <> CUDACachedMult.code <> CUDAArraylet1.code <> CUDAArraylet2.code
+            <> Arraylet.code <> ArrayletMin.code <> CachedMult.code <> GPUCachedMult.code <> GPUReference.code <> Zero.code <> CUDACachedMult.code <> CUDAArraylet1.code <> CUDAArraylet2.code <> TwoArrays.code
 
 -- usage: ./Main 0 2 4 6 8 0  bpsk
 -- or, to run the LDPC reference implementation, at a single EBNO = 2.2
