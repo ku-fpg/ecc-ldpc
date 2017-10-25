@@ -218,8 +218,12 @@ decoder CudaAllocations{..} arr@(Q.QuasiCyclic sz _) = do
                 -- Update guess
 
                 launchKernel updateLamFun
-                             (fromIntegral sz, 1, 1)
-                             (fromIntegral colCount, 1, 1)
+                             -- (fromIntegral sz, 1, 1)
+                             -- (fromIntegral colCount, 1, 1)
+                             (fromIntegral (colCount `div` colBlockSize), fromIntegral (rowCount `div` rowBlockSize), 1)
+                             (fromIntegral colBlockSize, fromIntegral rowBlockSize, 1)
+                             -- (fromIntegral sz, 1, 1)
+                             -- (fromIntegral colCount, 1, 1)
                              0
                              Nothing
                              [VArg lam_dev
